@@ -1,0 +1,260 @@
+---
+title: "Get data from the MIT Darwin model"
+output:   
+  github_document:
+    toc: yes
+    toc_depth: 2
+    fig_width: 7
+    fig_height: 5
+    dev: png
+    keep_html: yes
+    html_preview: yes
+---
+
+```{r message=FALSE, warning=FALSE}
+library(here)
+library(readr)
+library(tidyverse)
+library(fuzzyjoin)
+library(lubridate)
+library(magrittr)
+```
+
+Set CMAP API key authorization
+mykey = ####
+```{r eval=FALSE, include=TRUE}
+library(cmap4r)
+set_authorization()
+```
+
+```{r eval=FALSE, include=TRUE}
+local_cat <- get_catalog()
+```
+
+# GLOBAL DATASET
+Tara Oceans + GEOTRACES
+
+## GET METAGENOME COORDINATES
+```{r}
+mg <- bind_rows(
+  read_tsv(here::here("data", "geotraces", "geotraces_formatted_metadata.tsv"), col_types = c("ccccccDtdddccc")),
+  read_tsv(here::here("data", "tara", "tara_formatted_metadata.tsv"), col_types = c("ccccccDtdddccc"))
+)
+
+mg.coords <- mg %>%
+  select(lat, lon, depth) %>%
+  distinct()
+```
+
+## DOWNLOAD AND FORMAT DARWIN DATA
+Here we use the cmap4r package to get the Darwin model nutrient climatology. We will use this modeled data since it is highly complete and represents more of an "time-averaged" picture rather than the point source observations we have from the GEOTRACES samples.
+
+Table `tblDarwin_Plankton_Climatology`
+- Synechococcus (mmol C/L) = `prokaryote_c01_darwin_clim`
+- Prochlorococcus (mmol C/L) = `prokaryote_c02_darwin_clim`
+
+Table `tblDarwin_Nutrient_Climatology`
+- Dissolved Nitrate (mmol N/L) = `NO3_darwin_clim`
+- Dissolved Nitrite (mmol N/L) = `NO2_darwin_clim`
+- Dissolved Phosphate (mmol P/L) = `PO4_darwin_clim`
+- Dissolved Organic Phosphate (mmol P/L) = `DOP_darwin_clim`
+- Dissolved Total Fe (mmol Fe/L) = `FeT_darwin_clim`
+- Dissolved Organic Fe (mmol Fe/L) = `DOFe_darwin_clim`
+- Particulate Organic Fe (mmol Fe/L) = `POFe_darwin_clim`
+
+### Total dFe climatologial mean
+```{r eval=FALSE, include=TRUE}
+darwinFe.clim <- get_spacetime(tableName = 'tblDarwin_Nutrient_Climatology',
+              varName = 'FeT_darwin_clim',
+              dt1='2008-01-01',
+              dt2='2008-12-31',
+              lat1=-63,
+              lat2=50,
+              lon1=-180,
+              lon2=180,
+              depth1=0,
+              depth2=300)
+
+darwinFe.clim1 <- darwinFe.clim %>% 
+  group_by(lat, lon, depth) %>%
+  summarize(value=mean(FeT_darwin_clim, na.rm=T)) %>%
+  ungroup() %>%
+  rename(FeT_darwin_clim=value)
+```
+
+This step just saves you time from having to do the fuzzy_geo_join later
+```{r}
+darwinFe.clim.joined <- geo_left_join(mg.coords, darwinFe.clim1, 
+                        by = c("lat","lon"),
+                        distance_col="geojoin.dist.km",
+                        max_dist = 65)
+
+darwinFe.clim.joined.final <- darwinFe.clim.joined %>%
+  mutate(depth.diff=abs(depth.x-depth.y)) %>%
+  group_by(lat.x, lon.x, depth.x) %>%
+  filter(geojoin.dist.km==min(geojoin.dist.km)) %>%
+  filter(depth.diff==min(depth.diff)) %>%
+  slice(1) %>%
+  ungroup() 
+
+coord.info <- left_join(rename(darwinFe.clim.joined.final, lat=lat.x, lon=lon.x, depth=depth.x), mg) %>%
+  select(sampleID, lat=lat.y, lon=lon.y, depth=depth.y, sample_category) %>%
+  filter(sample_category!="timeseries")
+  
+write_tsv(coord.info, here::here("data", "darwin_clim_mean", "darwin_coords_depth.tsv"))
+```
+
+Now save...
+```{r}
+darwinFe.clim.joined <- left_join(coord.info, darwinFe.clim1) %>%
+  select(sampleID, FeT_darwin_clim) %>%
+  arrange(sampleID)
+
+write_tsv(darwinFe.clim.joined, here::here("data", "darwin_clim_mean", "dFeT.tsv"))
+```
+
+### Nitrate
+Read back coordinates if necessary
+```{r}
+coord.info <- read_tsv(here::here("data", "darwin_clim_mean", "darwin_coords_depth.tsv"))
+```
+
+```{r eval=FALSE, include=TRUE}
+darwinNO3.clim <- get_spacetime(tableName = 'tblDarwin_Nutrient_Climatology',
+              varName = 'NO3_darwin_clim',
+              dt1='2008-01-01',
+              dt2='2008-12-31',
+              lat1=-63,
+              lat2=50,
+              lon1=-180,
+              lon2=180,
+              depth1=0,
+              depth2=300)
+
+darwinNO3.clim %<>% group_by(lat, lon, depth) %>%
+  summarize(value=mean(NO3_darwin_clim, na.rm=T)) %>%
+  ungroup() %>%
+  mutate(variable="NO3_darwin_clim")
+
+darwinNO3.clim.joined <- left_join(coord.info, darwinNO3.clim) %>%
+  select(sampleID, value, variable)
+
+saveRDS(darwinNO3.clim.joined, here::here("combine-impute-finalize", "input", "darwin_clim", "darwinNO3.clim"))
+```
+
+### Nitrite
+```{r eval=FALSE, include=TRUE}
+coord.info <- readRDS(here::here("data", "darwin_clim", "darwin.coords.depth"))
+
+darwinNO2.clim <- get_spacetime(tableName = 'tblDarwin_Nutrient_Climatology',
+              varName = 'NO2_darwin_clim',
+              dt1='2008-01-01',
+              dt2='2008-12-31',
+              lat1=-63,
+              lat2=50,
+              lon1=-180,
+              lon2=180,
+              depth1=0,
+              depth2=500)
+
+darwinNO2.clim %<>% group_by(lat, lon, depth) %>%
+  summarize(value=mean(NO2_darwin_clim, na.rm=T)) %>%
+  ungroup() %>%
+  mutate(variable="NO2_darwin_clim")
+
+darwinNO2.clim.joined <- left_join(coord.info, darwinNO2.clim) %>%
+  select(sampleID, value, variable)
+
+write_tsv(darwinNO2.clim.joined, here::here("data", "darwin_clim_mean", "NO2.tsv"))
+```
+
+# HOT/BATS TIMESERIES
+```{r}
+ts <- read_tsv(here::here("data", "hot_bats", "hot_bats_formatted_metadata.tsv"),
+               col_types = c("ccccccDtdddccc")) %>%
+  mutate(month=month(date))
+
+ts.coords <- select(ts, lat, lon, depth, section) %>% distinct()
+```
+
+## HOT
+lat = 22.750
+lon = -158.000
+```{r}
+darwinFe.clim.hot <- get_spacetime(tableName = 'tblDarwin_Nutrient_Climatology',
+              varName = 'FeT_darwin_clim',
+              dt1='2008-01-01',
+              dt2='2008-12-31',
+              lat1=22,
+              lat2=23,
+              lon1=-157,
+              lon2=-159,
+              depth1=0,
+              depth2=300)
+```
+
+```{r}
+darwinFe.clim.hot.joined <- geo_left_join(filter(ts.coords, section=="HOT"), darwinFe.clim.hot, 
+                        by = c("lat","lon"),
+                        distance_col="geojoin.dist.km",
+                        max_dist = 80)
+
+darwinFe.clim.hot.joined.final <- darwinFe.clim.hot.joined %>%
+  mutate(depth.diff=abs(depth.x-depth.y)) %>%
+  group_by(month, lat.x, lon.x, depth.x) %>%
+  filter(geojoin.dist.km==min(geojoin.dist.km)) %>%
+  filter(depth.diff==min(depth.diff)) %>%
+  slice(1) %>%
+  ungroup() 
+
+coord.hot.info <- left_join(ts, rename(darwinFe.clim.hot.joined.final, 
+                                   lat=lat.x, lon=lon.x, depth=depth.x)) %>%
+  select(sampleID, lat, lon, depth, date, FeT_darwin_clim, section) %>%
+  filter(section=="HOT") %>%
+  arrange(date)
+```
+
+## BATS
+lat = 31.667
+lon = -64.167	
+```{r}
+darwinFe.clim.bats <- get_spacetime(tableName = 'tblDarwin_Nutrient_Climatology',
+              varName = 'FeT_darwin_clim',
+              dt1='2003-01-01',
+              dt2='2009-12-31',
+              lat1=31,
+              lat2=32,
+              lon1=-64,
+              lon2=-65,
+              depth1=0,
+              depth2=300)
+```
+
+```{r}
+darwinFe.clim.bats.joined <- geo_left_join(filter(ts.coords, section=="BATS"), darwinFe.clim.bats, 
+                        by = c("lat","lon"),
+                        distance_col="geojoin.dist.km",
+                        max_dist = 80)
+
+darwinFe.clim.bats.joined.final <- darwinFe.clim.bats.joined %>%
+  mutate(depth.diff=abs(depth.x-depth.y)) %>%
+  group_by(month, lat.x, lon.x, depth.x) %>%
+  filter(geojoin.dist.km==min(geojoin.dist.km)) %>%
+  filter(depth.diff==min(depth.diff)) %>%
+  slice(1) %>%
+  ungroup() 
+
+coord.bats.info <- left_join(ts, rename(darwinFe.clim.bats.joined.final, 
+                                   lat=lat.x, lon=lon.x, depth=depth.x)) %>%
+  select(sampleID, lat, lon, depth, date, FeT_darwin_clim, section) %>%
+  filter(section=="BATS") %>%
+  arrange(date)
+```
+
+## combine HOT and BATS
+```{r}
+bind_rows(coord.hot.info,
+          coord.bats.info) %>%
+  select(sampleID, FeT_darwin_clim) %>%
+  write_tsv(here::here("data", "darwin_clim_mean", "dFeT_timeseries.tsv"))
+```

@@ -1,0 +1,171 @@
+---
+title: "Tara Oceans Formatting, imputing, and finalizing data"
+output:   
+  github_document:
+    toc: yes
+    toc_depth: 2
+    fig_width: 7
+    fig_height: 5
+    dev: png
+    keep_html: yes
+    html_preview: yes
+---
+
+```{r message=FALSE, warning=FALSE}
+library(here)
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(withr)
+library(missRanger)
+```
+
+# INTRO
+We want to combine environmental, biogeographic, biogeochemical, and hydrographic data into a single dataset that can be loaded with ease. The final product will be a single R object that we can load and use right away with statistical models and visualization approaches or other downstream processing.
+
+# READ DATA
+metagenome sequence metadata
+```{r message=FALSE, warning=FALSE}
+tara.samp <- read_tsv(here::here("data", "tara_ebi_metadata.tsv"))
+```
+
+Environmental data from the PANGAEA dataset. IMPORTANT: the ENV-WATERCOLUMN appears to be summary values derived from the ENV_DEPTH_SENSORS product and maybe remote observations (eg MODIS). The table we use primarly is the DEPTH_SENSORS table. Also there is a lot of missing and incomplete nutrient data in the PANGAEA dataset. We will try to fill in using the supplementary data from Sunugawa 2015 and/or by imputing.
+
+All data was downloaded from here: https://doi.pangaea.de/10.1594/PANGAEA.836321
+```{r message=FALSE, warning=FALSE}
+tara.meta.a <- read_tsv(here::here("data", "tara", "pangea-metadata", "dataset875582", "datasets", "TARA_ENV_DEPTH_SENSORS_red.tsv")) %>%
+  janitor::clean_names() %>%
+  janitor::remove_empty(which = "cols") %>%
+  dplyr::rename(pangaea_id=sample_id, tara_station=station,
+         ebi_sample_id=sample_id_ena) %>%
+  #mutate(tara_station=ifelse(str_detect(tara_station, "TARA_148"), "TARA_148", tara_station)) %>%
+  #filter(tara_station!="TARA_148b") %>%
+  left_join(select(tara.samp, sampleID, ebi_sample_id), .) %>% 
+  distinct()
+
+#colnames(tara.meta.a)
+```
+
+```{r message=FALSE, warning=FALSE}
+tara.meta.b <- read_tsv(here::here("data", "tara", "pangea-metadata", "dataset875582", "datasets", "TARA_SAMPLES_CONTEXT_ENV-WATERCOLUMN_2.tab"), 
+                     skip = 2572) %>%
+  janitor::clean_names() %>%
+  janitor::remove_empty(which = "cols") %>%
+  dplyr::rename(pangaea_id=sample_id_tara_barcode_number_registered_at, tara_station=station_tara_station_number_registered_at,
+         ebi_sample_id=sample_id_ena_sample_accession_number) %>%
+  #mutate(tara_station=ifelse(str_detect(tara_station, "TARA_148"), "TARA_148", tara_station)) %>%
+  #filter(tara_station!="TARA_148b") %>%
+  left_join(select(tara.samp, sampleID, ebi_sample_id), .)
+
+#colnames(tara.meta.b)
+```
+
+Other random table?? here: https://doi.pangaea.de/10.1594/PANGAEA.875575
+```{r message=FALSE, warning=FALSE}
+tara.meta.c <- read_tsv(here::here("data", "tara", "pangea-metadata", "TARA_SAMPLES_CONTEXT_ENV-DEPTH-NUT_20170515.tsv")) %>%
+  janitor::clean_names() %>%
+  janitor::remove_empty(which = "cols") %>%
+  #mutate(tara_station=ifelse(str_detect(tara_station, "TARA_148"), "TARA_148", tara_station)) %>%
+  #filter(tara_station!="TARA_148b") %>%
+  left_join(select(tara.samp, sampleID, ebi_sample_id), .) %>%
+  select(sampleID:depth, matches("q50"))
+
+#colnames(tara.meta.c)
+```
+
+Companion table from Sunigawa et al 2015 Science. 
+```{r message=FALSE, warning=FALSE}
+taraW8 <- read_excel(here::here("data", "tara", "sunigawa_et_al_CompanionTables.xlsx"), sheet = "Table W8") %>%
+  janitor::clean_names() %>%
+  janitor::remove_empty(which = "cols") %>%
+  select(pangaea_id=pangaea_sample_id, 
+         mean_depth_m, mean_temperature_deg_c, mean_salinity_psu, mean_oxygen_umol_kg,
+         po4_umol_l, si_umol_l, mean_depth_max_fluo_m)
+```
+
+# FORMAT DATA
+```{r}
+tara.meta.red.a <- tara.meta.a %>%
+  select(sampleID, pangaea_id, tara_station,
+         ebi_sample_id, env_feature,
+         temp_deg_c_q50,
+         sal_q50,
+         sigma_theta_kg_m3_q50,
+         chl_a_mg_m3_q50_2)
+
+tara.meta.red.b <- tara.meta.b %>%
+  select(sampleID, pangaea_id, tara_station,
+         ebi_sample_id,
+         chlmax_depth=d_chl_m_m_calculated_from_in_situ_senso,
+         no3_mmol_l_at_the_depth_of_the_mixed_lay_1,
+         no3_mmol_l_at_the_depth_of_maximum_chlor,
+         oxygen_mmol_kg_at_the_depth_of_the_mixed_lay_1,
+         oxygen_mmol_kg_at_the_depth_of_maximum_chlor) %>%
+  group_by(tara_station) %>%
+  mutate(chlmax_depth1=mean(chlmax_depth)) %>%
+  ungroup()
+
+tara.meta.red.c <- tara.meta.c %>%
+  select(sampleID, pangaea_id, tara_station, ebi_sample_id, 
+         no2_q50, no2no3_q50, po4_q50, sio4_q50) %>%
+  mutate(no3_q50=no2no3_q50-no2_q50)
+```
+
+```{r}
+tara.samp.meta <- left_join(tara.samp, tara.meta.red.a) %>%
+  left_join(., tara.meta.red.c) %>%
+  group_by(tara_station) %>%
+  mutate(lat=round(mean(lat), 3), lon=round(mean(lon), 3)) %>%
+  ungroup()
+```
+
+Final joining
+
+1. chla_norm is every value divided by chla at the SCML layer
+2. dcm.layer is if `chla_norm > 0.5*chla_norm`
+3. dcm.max is if `chla_norm >= 0.9*chla_norm`
+4. hdb_cl is whether the depth of maximum fluorescence falls into the basic depth ranges determined for the SCML clusters derived from the GEOTRACES dataset
+
+```{r}
+tara.samp.meta.w8.wide.darwin <- tara.samp.meta %>%
+  left_join(., taraW8, by="pangaea_id") %>%
+  #left_join(., darwin.joined.final) %>%
+  left_join(., select(tara.meta.red.b, sampleID, chlmax_depth1)) %>%
+  mutate(temperature_dissolved_deg.c = temp_deg_c_q50,
+         salinity_dissolved_PSS.1978 = sal_q50,
+         sigmatheta_dissolved_kg.m3 = sigma_theta_kg_m3_q50,
+         chl_dissolved_mg.kg = chl_a_mg_m3_q50_2/1000/1.025,
+         oxygen_dissolved_umol.kg = mean_oxygen_umol_kg,
+         phosphate_dissolved_umol.kg = po4_q50/1.025,
+         silicate_dissolved_umol.kg = sio4_q50/1.025,
+         nitrite_dissolved_umol.kg = no2_q50/1.025,
+         nitrate_dissolved_umol.kg = no2no3_q50/1.025) %>%
+  group_by(tara_station, lat, lon) %>%
+  mutate(chla_norm=chl_dissolved_mg.kg/max(chl_dissolved_mg.kg), 
+         dcm.layer=ifelse(chla_norm>0.5*max(chla_norm), 1, 0),
+         dcm.max=ifelse(chla_norm>=0.9*max(chla_norm), 1, 0),
+         dcm_depth=ifelse(environment=="dcm", depth, NA),
+         hdb_cl=case_when(chlmax_depth1 <= 21.4 ~ 1,
+                          chlmax_depth1 > 21.4 & chlmax_depth1 <=62.5 ~ 2,
+                          chlmax_depth1 > 62.5 & chlmax_depth1 <=84.9 ~ 3,
+                          chlmax_depth1 > 84.9 ~ 4)) %>%
+  fill(dcm_depth, .direction = "updown") %>%
+  select(sampleID, date, replicate, tara_station, 
+         environment, depth, lat, lon, ocean,
+         temperature_dissolved_deg.c,
+         salinity_dissolved_PSS.1978, 
+         sigmatheta_dissolved_kg.m3,
+         oxygen_dissolved_umol.kg,
+         phosphate_dissolved_umol.kg,
+         silicate_dissolved_umol.kg,
+         nitrite_dissolved_umol.kg,
+         nitrate_dissolved_umol.kg,
+         chl_dissolved_mg.kg, chla_norm, dcm_depth, dcm.layer, dcm.max, hdb_cl,
+         ebi_run_id, release_version, date_acquired_from_ebi,
+         full_sample_name, pangaea_id, env_feature)
+```
+
+# OUTPUT
+```{r}
+write_tsv(tara.samp.meta.w8.wide.darwin, here::here("data", "intermediate_files", "tara_biogeochem_metadata.tsv"))
+```

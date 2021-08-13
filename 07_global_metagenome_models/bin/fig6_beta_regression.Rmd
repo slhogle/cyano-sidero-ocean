@@ -1,0 +1,136 @@
+---
+title: "RELATIONSHIP BETWEEN LLI, NO2, AND DCM_DEPTH"
+output: html_notebook
+---
+
+```{r}
+library(here)
+library(tidyverse)
+library(ggforce)
+library(ggeffects)
+library(see)
+library(performance)
+library(ggeffects)
+library(betareg)
+library(withr)
+library(emmeans)
+```
+
+# READ DATA
+```{r}
+tbdt <- read_tsv(here::here("data", "geotraces_tara_combined_imputed.tsv")) %>%
+  group_by(sampleID) %>% 
+  slice(1) %>%
+  ungroup() %>%
+  filter(sampleID != "S0468") %>%
+  rename(rpkm_tbdt=RPK_prochlorococcus_TBDT,
+         rpkm_pro=RPK_total_prochlorococcus_reads) %>%
+  mutate(RA=rpkm_tbdt/rpkm_pro)
+```
+
+
+# RELATIONSHIP BETWEEN LLI, NO2, AND DCM_DEPTH
+
+Relative abundance of the TBDT increases alongside NO2 and LLI but the relationship between DCM_DEPTH is less clear.
+
+```{r}
+# cut LLI, NO2, and DCM depth into 3 roughly equally-sized categories
+tbdt1 <- tbdt %>%
+  mutate(nf=cut_number(nitrite_dissolved_umol.kg, n=3)) %>% #, labels=c("l", "m", "h")
+  mutate(dcmf=cut_number(dcm_depth, n=3)) %>% #, labels=c("l", "m", "h")
+  mutate(LLIf=cut_number(pro_LLI, n=3)) %>% #, labels=c("l", "m", "h")
+  mutate(RA=ifelse(RA==0, rnorm(n(), 3.055513e-07, 1e-7), RA)) %>%
+  mutate(pro_LLI_norm=pro_LLI*pro)
+```
+
+## EXAMINE DATA
+```{r}
+ggplot(tbdt1) + 
+  geom_jitter(aes(x=nf, y=RA, shape=LLIf, color=pro_LLI), width = 0.25, height=0.0001) + 
+  facet_grid(~dcmf) +
+  labs(x="NO2 conc factor", y="Rel Abund TBDT") + 
+  scale_color_viridis_c(trans="log10") + 
+  scale_y_continuous(breaks=c(0.0001, 0.001, 0.002, 0.003), trans="sqrt", limits=c(0, 3.2e-3)) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+```
+
+## MODEL WITH BETA REGRESSION
+
+Idea is to model LLI as constant additive effect while allowing the effect of NO2 to vary along with DCM depth
+```{r}
+with_preserve_seed(brmod1 <- betareg(
+  formula = RA ~ LLIf + nf * dcmf,
+  data = tbdt1))
+
+with_preserve_seed(brmod2 <- betareg(
+  formula = RA ~ nf * dcmf,
+  data = tbdt1))
+```
+
+Better to include LLI term
+```{r}
+compare_performance(brmod1, brmod2, rank = TRUE)
+```
+
+# Table S2
+```{r}
+summary(brmod1)
+  
+texreg(brmod1)
+```
+
+```{r}
+brmod1.emm <- emmeans(brmod1, ~ LLIf + nf * dcmf)
+
+contrast(brmod1.emm, "consec", simple = "each", combine = TRUE, adjust = "mvt") %>%
+  as.data.frame() %>%
+  filter(p.value <= 0.05) #%>%
+  xtable::xtable()
+```
+
+Kind of like an emmeans-based ANOVA
+```{r}
+joint_tests(brmod) #%>% xtable::xtable()
+```
+
+```{r}
+pairs(emmeans(brmod, specs=c("LLIf"), type="re")) #%>% xtable::xtable()
+```
+```{r}
+pairs(emmeans(brmod, specs=c("nf"), type="re"))
+```
+
+Get estimated marginal means
+```{r}
+mydf1 <- ggemmeans(brmod1, terms = c("nf", "LLIf", "dcmf"), interval="confidence") %>%
+  rename(dcmf=facet, RA=predicted, nf=x, LLIf=group)
+```
+
+# Fig 6
+```{r}
+fig6 <- ggplot(tbdt1) + 
+  geom_jitter(aes(x=nf, y=RA, color=pro_LLI),
+              width = 0.25,
+              height=0.0001,
+              alpha=0.75,
+              shape=16) +  
+  facet_grid(~dcmf) +
+  geom_point(data=mydf1, aes(x=nf, y=RA, shape=LLIf), 
+             position = position_dodge(width = 0.9),
+             size=2) + 
+  geom_linerange(data=mydf1, aes(x=nf, y=RA, group=LLIf, ymin=conf.low, ymax=conf.high), position = position_dodge(width = 0.9)) +
+  labs(x="NO2 conc factor", y="Rel Abund TBDT") + 
+  scale_color_viridis_c(trans="log10", begin = 0, end=1, option="D") + 
+  scale_y_continuous(breaks=c(0.0001, 0.001, 0.002, 0.003), trans="sqrt") +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+```
+
+```{r}
+ggsave(here::here("figs", "no2_dcm.svg"), plot=fig6,
+       device="svg", units="cm", height=7, width=18)
+```
+

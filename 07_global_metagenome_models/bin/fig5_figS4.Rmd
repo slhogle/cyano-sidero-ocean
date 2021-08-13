@@ -1,0 +1,152 @@
+---
+title: "TBDT vs individual variables"
+output: html_notebook
+---
+
+```{r}
+library(here)
+library(tidyverse)
+library(ggforce)
+library(ggeffects)
+library(see)
+library(performance)
+library(ggeffects)
+library(betareg)
+library(withr)
+library(emmeans)
+```
+
+# READ DATA
+```{r}
+tbdt <- read_tsv(here::here("data", "geotraces_tara_combined_imputed.tsv")) %>%
+  group_by(sampleID) %>% 
+  slice(1) %>%
+  ungroup() %>%
+  filter(sampleID != "S0468") %>%
+  rename(rpkm_tbdt=RPK_prochlorococcus_TBDT,
+         rpkm_pro=RPK_total_prochlorococcus_reads) %>%
+  mutate(RA=rpkm_tbdt/rpkm_pro)
+```
+
+# PLOT FIG 5
+Relationship between variables and abundance
+```{r}
+plotme <- tbdt %>%
+  select(sampleID, RA, ocean, pro_HLIII_HLIV, dcm_depth, salinity_dissolved_PSS.1978, iron_dissolved_nmol.kg, pro_LLI, zinc_dissolved_nmol.kg, aluminum_dissolved_nmol.kg, nitrite_dissolved_umol.kg, ironDarwin_dissolved_nmol.kg, copper_dissolved_nmol.kg, imputed_iron, imputed_zinc, imputed_aluminum, imputed_nitrite, imputed_copper) %>%
+  pivot_longer(cols=pro_HLIII_HLIV:copper_dissolved_nmol.kg) %>%
+  mutate(imputed=case_when(name=="iron_dissolved_nmol.kg" & imputed_iron==1 ~ 1,
+                           name=="copper_dissolved_nmol.kg" & imputed_copper==1 ~ 1,
+                           name=="zinc_dissolved_nmol.kg" & imputed_nitrite==1 ~ 1,
+                           name=="aluminum_dissolved_nmol.kg" & imputed_nitrite==1 ~ 1,
+                           name=="nitrite_dissolved_umol.kg" & imputed_nitrite==1 ~ 1,
+                           TRUE ~ 0)) %>%
+  mutate(name=factor(name, levels=c("pro_HLIII_HLIV", "dcm_depth", "salinity_dissolved_PSS.1978", "iron_dissolved_nmol.kg", "pro_LLI", "zinc_dissolved_nmol.kg", "aluminum_dissolved_nmol.kg", "nitrite_dissolved_umol.kg", "ironDarwin_dissolved_nmol.kg", "copper_dissolved_nmol.kg"))) %>%
+  mutate(value=case_when(name=="nitrite_dissolved_umol.kg" & value == 0 ~ rnorm(n(), 0.005, 0.005),
+                         name=="nitrite_dissolved_umol.kg" & value == 0.01 ~ rnorm(n(), 0.01, 0.005),
+                         name=="nitrite_dissolved_umol.kg" & value == 0.02 ~ rnorm(n(), 0.02, 0.01),
+                         name=="salinity_dissolved_PSS.1978" & value < 35 ~ rnorm(n(), 35, 0.5),
+                         TRUE ~ value))
+
+penvfeat <- ggplot(plotme, aes(x=value, y=RA)) + 
+  geom_smooth(data=filter(plotme, str_detect(ocean, "pacific|indian|atlantic_south")), 
+             method="lm", se=F, color="black", size=0.5) +
+  geom_point(aes(fill=ocean, 
+                 shape=factor(imputed), 
+                 size=factor(imputed)), 
+             alpha=0.5, stroke = 0) +
+  scale_size_manual(values=c(1.5, 1)) +
+  scale_shape_manual(values=c(21, 22)) +
+  labs(y="RA", x="") + 
+  facet_wrap(~name, scales="free_x", nrow=2) + 
+  scale_fill_brewer(palette="Dark2", direction=-1) + 
+  scale_color_brewer(palette="Dark2", direction=-1) + 
+  scale_y_continuous(trans="sqrt") +
+  scale_x_continuous(trans="log10") +
+  theme_bw() +
+  theme(legend.position="none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+ggsave(here::here("figs", "pVarRA.svg"), plot=penvfeat,
+       device="svg", units="cm", height=10, width=17.8)
+```
+
+```{r}
+penvfeat
+```
+
+## CORRELATION COEFFICIENTS FOR FIG 5
+```{r}
+#nonlinear
+cor.test(tbdt$silicate_dissolved_umol.kg, tbdt$RA, method="spearman", alternative="two.sided")
+```
+
+```{r}
+#linear
+cor.test(tbdt$silicate_dissolved_umol.kg, tbdt$RA, method="pearson", alternative="two.sided")
+```
+
+# FIG S4
+N atlantic, S atlantic, N Pacific, S pacific, medred, Indian
+e41a1c, 377eb8, 4daf4a, 984ea3, ff7f00,  a65628
+
+```{r}
+mycols <- c("#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00",  "#a65628")
+```
+
+```{r}
+plotme_supp <- tbdt %>%
+  select(sampleID, RA, ocean, nickel_dissolved_nmol.kg, lead_dissolved_pmol.kg, pro_HLII, pro_LLIV, chla_norm, temperature_dissolved_deg.c, pro_HLI, manganese_dissolved_nmol.kg, cobalt_dissolved_pmol.kg, nitrate_dissolved_umol.kg, depth, silicate_dissolved_umol.kg, pro_LLVII, pro_LLII_LLIII, oxygen_dissolved_umol.kg, phosphate_dissolved_umol.kg, imputed_nickel, imputed_lead, imputed_manganese, imputed_cobalt, imputed_nitrate, imputed_silicate, imputed_oxygen, imputed_phosphate) %>%
+  pivot_longer(cols=nickel_dissolved_nmol.kg:phosphate_dissolved_umol.kg) %>%
+  mutate(imputed=case_when(name=="nickel_dissolved_nmol.kg" & imputed_nickel==1 ~ 1,
+                           name=="lead_dissolved_pmol.kg" & imputed_lead==1 ~ 1,
+                           name=="manganese_dissolved_nmol.kg" & imputed_manganese==1 ~ 1,
+                           name=="cobalt_dissolved_pmol.kg" & imputed_cobalt==1 ~ 1,
+                           name=="nitrate_dissolved_umol.kg" & imputed_nitrate==1 ~ 1,
+                           name=="silicate_dissolved_umol.kg" & imputed_silicate==1 ~ 1,
+                           name=="oxygen_dissolved_umol.kg" & imputed_oxygen==1 ~ 1,
+                           name=="phosphate_dissolved_umol.kg" & imputed_phosphate==1 ~ 1,
+                           TRUE ~ 0)) %>%
+  mutate(name=factor(name, levels=c("nickel_dissolved_nmol.kg", "lead_dissolved_pmol.kg", "pro_HLII", "pro_LLIV", "chla_norm", "temperature_dissolved_deg.c", "pro_HLI", "manganese_dissolved_nmol.kg", "cobalt_dissolved_pmol.kg", "nitrate_dissolved_umol.kg", "depth", "silicate_dissolved_umol.kg", "pro_LLVII", "pro_LLII_LLIII", "oxygen_dissolved_umol.kg", "phosphate_dissolved_umol.kg"))) %>%
+  mutate(value=case_when(name=="oxygen_dissolved_umol.kg" & value < 100 ~ rnorm(n(), 100, 1),
+                         name=="nickel_dissolved_nmol.kg" & value > 4 ~ rnorm(n(), 3, 0.5),
+                         name=="lead_dissolved_pmol.kg" & value >  80 ~ rnorm(n(), 50, 6),
+                         name=="salinity_dissolved_PSS.1978" & value < 35 ~ rnorm(n(), 35, 0.5),
+                         TRUE ~ value)) %>%
+  mutate(ocean=factor(ocean, levels=c("atlantic_north", "atlantic_south", "pacific_north", "pacific_south",
+                                      "med_red", "indian")))
+
+penvfeat_supp <- ggplot(plotme_supp, aes(x=value, y=RA)) + 
+  geom_smooth(data=filter(plotme_supp, str_detect(ocean, "pacific|indian|atlantic_south")), 
+             method="lm", se=F, color="black", size=0.5) +
+  geom_point(aes(fill=ocean, 
+                 shape=factor(imputed), 
+                 size=factor(imputed)), 
+             alpha=0.5, stroke = 0) +
+  scale_size_manual(values=c(1.5, 1)) +
+  scale_shape_manual(values=c(21, 22)) +
+  labs(y="RA", x="") + 
+  facet_wrap(~name, scales="free_x", nrow=4) + 
+  scale_fill_manual(values = mycols) + 
+  scale_color_manual(values = mycols) + 
+  scale_y_continuous(trans="sqrt") +
+  scale_x_continuous(trans="log10") +
+  theme_bw() +
+  theme(legend.position="none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+ggsave(here::here("figs", "pVarRA_supp.svg"), plot=penvfeat_supp,
+       device="svg", units="cm", height=17.8, width=17.8)
+```
+
+## CORRELATION COEFFICIENTS FOR FIG S4
+```{r}
+#nonlinear
+cor.test(tbdt$zinc_dissolved_nmol.kg, tbdt$RA, method="spearman", alternative="two.sided")
+```
+
+```{r}
+#linear
+cor.test(tbdt$iron_dissolved_nmol.kg, tbdt$RA, method="pearson", alternative="two.sided")
+```

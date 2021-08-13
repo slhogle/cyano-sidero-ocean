@@ -1,0 +1,5 @@
+*
+*/
+!.gitignore
+!.tara_ebi_metadata.tsv
+!.tara_formatted_metadata.tsv

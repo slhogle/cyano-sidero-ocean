@@ -1,0 +1,80 @@
+---
+title: "Format data from Prochlorococcus ecotypes"
+output:   
+  github_document:
+    toc: yes
+    toc_depth: 2
+    fig_width: 7
+    fig_height: 5
+    dev: png
+    keep_html: yes
+    html_preview: yes
+---
+
+```{r message=FALSE, warning=FALSE}
+library(here)
+library(readr)
+library(tidyverse)
+library(fuzzyjoin)
+library(lubridate)
+library(magrittr)
+```
+
+## Ecotype Abundances
+
+### Prochlorococcus
+```{r message=FALSE, warning=FALSE}
+ecotypes.pro <- read_tsv(here::here("data", "ecotypes", "ecotype_read_abundance.tsv")) %>%
+  select(sampleID=sample, unclassified, reads_total, pro_all, pro_HLI, pro_HLII, 
+         pro_HLIII_HLIV, pro_LLI, pro_LLII_LLIII, pro_LLIV, pro_LLVII) %>%
+  pivot_longer(pro_HLI:pro_LLVII, names_to = "ecotype", values_to = "count") %>%
+  mutate(ra=count/pro_all) %>%
+  select(-count) %>%
+  pivot_wider(names_from = "ecotype", values_from ="ra") %>%
+  mutate(pro=pro_all/(reads_total-unclassified)) %>% 
+  select(-pro_all, -reads_total, -unclassified)
+```
+
+LLVII as a fraction of total Pro and subclades as fraction of LLVII reads
+```{r message=FALSE, warning=FALSE}
+ecotypesLLVII <- read_tsv(here::here("data", "ecotypes", "ecotype_read_abundance.tsv")) %>%
+  select(sampleID=sample, pro_LLVII:pro_LLVIIf) %>%
+  pivot_longer(pro_LLVIIa:pro_LLVIIf, names_to = "ecotype", values_to = "count") %>%
+  mutate(ra=count/pro_LLVII) %>%
+  select(-count) %>%
+  pivot_wider(names_from = "ecotype", values_from ="ra") %>%
+  select(-pro_LLVII)
+```
+
+### SAR11
+```{r message=FALSE, warning=FALSE}
+ecotypes.sar11 <- read_tsv(here::here("data", "ecotypes", "ecotype_read_abundance.tsv")) %>%
+  select(sampleID=sample, reads_total, unclassified, pel_all, pel_Ia, pel_Ib, 
+         pel_Ic, pel_IIa, pel_IIb, pel_IIIa, pel_IIIb, pel_IV, pel_V) %>%
+  pivot_longer(pel_Ia:pel_V, names_to = "ecotype", values_to = "count") %>%
+  mutate(ra=count/pel_all) %>%
+  select(-count) %>%
+  pivot_wider(names_from = "ecotype", values_from ="ra") %>%
+  mutate(sar11=pel_all/(reads_total-unclassified)) %>% 
+  select(-pel_all, -reads_total, -unclassified)
+```
+
+### Bacteria vs archaea vs eukaryotes
+```{r message=FALSE, warning=FALSE}
+ecotypes <- read_tsv(here::here("data", "ecotypes", "ecotype_read_abundance.tsv")) %>%
+  select(sampleID=sample, unclassified, reads_total, bacteria, archaea, eukaryotes, viruses) %>%
+  pivot_longer(bacteria:viruses, names_to = "ecotype", values_to = "count") %>%
+  mutate(ra=count/(reads_total-unclassified)) %>%
+  select(-count) %>%
+  pivot_wider(names_from = "ecotype", values_from ="ra") %>%
+  select(-reads_total, -unclassified)
+```
+
+```{r message=FALSE, warning=FALSE}
+ecotypes.combo <- left_join(ecotypes.pro, ecotypesLLVII) %>% 
+  left_join(., ecotypes.sar11) %>% left_join(., ecotypes)
+```
+
+```{r}
+write_tsv(ecotypes.combo, here::here("data", "intermediate_files", "ecotypes_formatted.tsv"))
+```

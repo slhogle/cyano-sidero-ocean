@@ -1,0 +1,537 @@
+---
+title: "Siderophore and iron plots and seasonal abundances"
+output: html_notebook
+---
+
+```{r}
+library(here)
+library(tidyverse)
+library(lubridate)
+library(ggforce)
+library(patchwork)
+library(viridis)
+library(withr)
+```
+
+# LOAD CHECMICAL DATA
+```{r}
+chem_data <- read_tsv(here::here("data", "Fe_L_siderophore_data.tsv"))
+```
+```{r}
+library(performance)
+library(modelbased)
+library(emmeans)
+
+mod.Dfe <- glm(log(Dfe_conc_nm) ~ ocean*environment, family=gaussian(link="identity"), data=chem_data)
+
+mod.L1  <- glm(log(L1_conc_nm) ~ ocean*environment,  family=gaussian(link="identity"), data=chem_data)
+
+check_model(mod.L1)
+
+means <-
+   bind_rows(
+      estimate_means(mod.Dfe) %>% mutate(name = "Dfe_conc_nm"),
+      estimate_means(mod.L1) %>% mutate(name = "L1_conc_nm")
+   )
+
+model_performance(mod.L1, metrics="common")
+performance_accuracy(mod.L1)
+performance::r2_nagelkerke(mod.L1)
+```
+
+
+```{r}
+summary(mod.L1) #%>% xtable::xtable()
+```
+
+```{r}
+mod1.emm <- emmeans(mod.L1, ~ ocean*environment)
+
+contrast(mod1.emm, "consec", simple = "each", combine = TRUE, adjust = "bonferroni") %>%
+  xtable::xtable()
+```
+
+```{r}
+p <- chem_data %>%
+   mutate(siderophore_pmol = log10(siderophore_pmol)) %>%
+   pivot_longer(cols = c("L1_conc_nm", "Dfe_conc_nm", "siderophore_pmol")) %>%
+   mutate(ocean = factor(ocean, levels = c("n_atlantic", "n_pacific"))) %>%
+   ggplot(aes(x = environment, y = value)) +
+   geom_sina(aes(color = ocean),
+             scale = "area",
+             method = "counts",
+             shape = 16) +
+   geom_pointrange(
+      data = means,
+      aes(
+         y = Mean,
+         ymin = CI_low,
+         ymax = CI_high,
+         fill = ocean
+      ),
+      size = 0.5,
+      shape = 21,
+      position = position_dodge2(width = 0.9)
+   ) +
+   scale_fill_viridis_d(begin = 0.2, end = 0.8) +
+   scale_color_viridis_d(begin = 0.2, end = 0.8) +
+   facet_wrap( ~ name, scales = "free_y") +
+   theme_bw()
+
+p
+
+ggsave(here::here("figs", "chem_data.svg"), plot=p,
+       device="svg", height=6, width=13.5, units="cm")
+```
+
+# FUNCTIONS
+```{r}
+getSeason <- function(input.date){
+  numeric.date <- 100*month(input.date)+day(input.date)
+  ## input Seasons upper limits in the form MMDD in the "break =" option:
+  cuts <- base::cut(numeric.date, breaks = c(0,319,0620,0921,1220,1231)) 
+  #cuts <- base::cut(numeric.date, breaks = c(0,0300,0500,0800,1100,1101)) 
+  # rename the resulting groups (could've been done within cut(...levels=) if "Winter" wasn't double
+  levels(cuts) <- c("Winter","Spring","Summer","Fall","Winter")
+  return(cuts)
+}
+```
+
+```{r}
+getSeason(as.POSIXct("2004-09-22 12:00:00"))
+```
+
+# LOAD RELATIVE ABUNDANCE DATA
+
+```{r message=FALSE, warning=FALSE}
+tbdt <- left_join(read_tsv(here::here("data", "siderophore_abundance_hot_bats.tsv")), 
+read_tsv(here::here("data", "hot_bats_metadata.tsv"))) %>%
+  mutate(date=ymd(date)) %>%
+  group_by(sampleID) %>% 
+  slice(1) %>%
+  ungroup() %>%
+  filter(sampleID != "S0468") %>%
+  filter(date < as.POSIXct("2006-01-01 12:00:00")) %>%
+  mutate(season = getSeason(date))
+```
+
+# EXPLORATORY PLOTS
+```{r}
+cols <- c("#8856a7", "#8c96c6", "#9ebcda")
+
+pbats <- tbdt %>%
+  filter(section=="BATS") %>%
+  mutate(environment=factor(environment, levels=c("surface", "dcm", "mixed.layer"),
+                            labels=c("Surface", "SCML", "Deep Mixed Layer"))) %>%
+  pivot_longer(c(RA, pro_LLI, pro_HLII)) %>%
+  ggplot() +
+  #geom_point(aes(x=date, y=value, color=name, shape=season)) +
+  geom_line(aes(x=date, color=name, y=value)) +
+  #ylim(0, 0.55) +
+  labs(x="", y="", title="BATS") +
+  #scale_y_continuous(trans="sqrt") +
+  #scale_color_manual(values=cols) + 
+  facet_grid(~environment, scales="free_y") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=8),
+        plot.margin=unit(c(0,0,0,0),"cm")) 
+
+phot <- tbdt %>%
+  filter(section=="HOT") %>%
+  mutate(environment=factor(environment, levels=c("surface", "dcm", "mixed.layer"),
+                            labels=c("Surface", "SCML", "Deep Mixed Layer"))) %>%
+  pivot_longer(c(RA, pro_LLI, pro_HLII)) %>%
+  ggplot() +
+  #geom_point(aes(x=date, y=value, color=name, shape=season)) +
+  geom_line(aes(x=date, y=value, color=name)) +
+  #ylim(0, 0.55) +
+  labs(x="", y="PepM Rel. Abund.", title="HOT") +
+  #scale_y_continuous(trans="sqrt") +
+  #scale_color_manual(values=cols) + 
+  facet_grid(~environment, scales="free_y") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=8),
+        plot.margin=unit(c(0,0,0,0),"cm"))
+```
+
+```{r}
+phot / pbats + plot_layout(guides="collect") + plot_annotation(tag_levels = 'A')
+```
+
+```{r}
+pecoTBDT <- tbdt %>%
+  #filter(section=="HOT") %>%
+  mutate(environment=factor(environment, levels=c("surface", "dcm", "mixed.layer"),
+                            labels=c("Surface", "SCML", "Deep Mixed Layer"))) %>%
+  pivot_longer(c(RA, pro_LLI, pro_HLII)) %>%
+  ggplot() +
+  geom_point(aes(x=date, y=value, color=name)) +
+  geom_line(aes(x=date, y=value, color=name)) +
+  #ylim(0, 0.55) +
+  labs(x="", y="Relative Abundance") +
+  #scale_y_continuous(trans="sqrt") +
+  #scale_color_manual(values=cols) + 
+  facet_grid(section~environment, scales="free_y") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=8),
+        plot.margin=unit(c(0,0,0,0),"cm"))
+
+pecoTBDT
+```
+
+```{r}
+dates <- data.frame(season=c("Spring","Summer", "Fall", "Winter"),
+           section=c("HOT", "BATS"),
+           environment=c("dcm", "surface"),
+           year=c("2003", "2004")) %>%
+  expand(season, section, environment, year) %>%
+  mutate(date=case_when(season=="Fall" & year=="2003" ~ ymd("2003-09-21"),
+                        season=="Fall" & year=="2004" ~ ymd("2004-09-21"),
+                        season=="Winter" & year=="2003" ~ ymd("2003-12-20"),
+                        season=="Winter" & year=="2004" ~ ymd("2004-12-20"),
+                        season=="Spring" & year=="2003" ~ ymd("2003-03-19"),
+                        season=="Spring" & year=="2004" ~ ymd("2004-03-19"),
+                        season=="Summer" & year=="2003" ~ ymd("2003-06-20"),
+                        season=="Summer" & year=="2004" ~ ymd("2004-06-20"),
+                        )) %>%
+  dplyr::select(-year)
+```
+
+
+```{r}
+splits_a <- bind_rows(tbdt, dates) %>%
+  dplyr::select(date, season, section, environment, RA, pro_LLI, pro_HLII) %>%
+  pivot_longer(c(RA, pro_LLI, pro_HLII)) %>%
+  group_by(section, environment, name) %>%
+  group_split()
+
+splits_b <- list()
+
+for(i in 1:length(splits_a)) {
+  ApproxFun <- approxfun(x = splits_a[[i]]$date, y = splits_a[[i]]$value)
+  Dates <- seq.Date(min(splits_a[[i]]$date), max(splits_a[[i]]$date), by = 1)
+  LinearFit <- ApproxFun(Dates)
+  
+  splits_b[[i]] <- tibble(date = Dates, value = LinearFit) %>%
+  mutate(section=unique(splits_a[[i]]$section), 
+         environment=unique(splits_a[[i]]$environment),
+         name=unique(splits_a[[i]]$name),
+         season=getSeason(date))
+}
+
+plotdf <- bind_rows(splits_b) %>%
+  mutate(height=case_when(name=="pro_HLII" ~ 0,
+                          name=="pro_LLI" ~ 1,
+                          name=="RA" ~ 2),
+         section=factor(section, levels=c("HOT", "BATS")),
+         environment=factor(environment, levels=c("surface", "dcm", "mixed.layer"),
+                            labels=c("Surface", "DCM", "Deep Mixed Layer")))
+```
+
+```{r}
+library(ggridges)
+
+pseason1 <- ggplot(plotdf, aes(group=name)) +
+  geom_ridgeline_gradient(aes(x=date, y=height, fill=season, height=value), 
+                          scale = 1, alpha=0.5) + 
+  ylim(0, 3) +
+  labs(x="", y="") +
+  facet_grid(environment~section, scales="free_y") +
+  scale_fill_viridis_d(name = "Season", option = "C", begin=0.1, end=0.95) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=8),
+        plot.margin=unit(c(0,0,0,0),"cm"))
+
+ggsave(here::here("figs", "seasons.svg"), plot=pseason1,
+       device="svg", height=12, width=12, units="cm")
+
+pseason1 
+```
+
+# TEST FOR SEASONALITY
+Here time series data is irregular so we can't just analyze it using base R timeseries or zoo packages. Gavin Simpson suggests using an additive model to "decompose" the seasonal and trend components. In this regression-based approach we model the residuals as a time series process to account for lack of independence in the residuals.
+
+We use GAMs and LMEs to fit a cyclic spline in the day of the year variable `dayOfYear` which is a proxy for the seasonality of the time series. Any trend is represented by the cumulative time days since sampling at T0 `timeOfSampling` which is a numeric variable. The residuals are modelled  as a continuous-time AR(1) using the timeOfSampling variable as the time component of the CAR(1). Since our data is bounded 0
+
+See SO post here: https://stackoverflow.com/a/12623280
+
+Gavin Simpson's blog here: https://fromthebottomoftheheap.net/2011/07/21/smoothing-temporally-correlated-data/
+
+Also see SO post here about trying to use beta-binomial in a similar situation with overdispersed data - https://stats.stackexchange.com/q/441397
+
+## LOAD REQURIED LIBS
+```{r}
+library(mgcv)
+library(nlme)
+library(broom)
+library(gratia)
+library(fitdistrplus)
+library(memisc)
+library(gamlss)
+```
+
+## TRANSFORMATIONS FOR PERCENTAGE DATA
+```{r}
+tbdt1 <- tbdt %>%
+  # these values chosen to represent the lowest 5% of data (excluding zeros). Needed for beta
+  mutate(RA1 = ifelse(RA==0, runif(1, 0.000315, 0.0021628), RA)) %>%
+  group_by(section, environment) %>%
+  # Not useful here... see SO post -
+  # https://stats.stackexchange.com/questions/337457/unusual-transformation-of-percentage-data
+  mutate(RA2 = log10(max(RA*100) - (RA*100) + 1)) %>% 
+  mutate(dayOfYear=lubridate::yday(date)) %>%
+  arrange(date) %>%
+  mutate(timeOfSampling=as.numeric(date - min(date)))
+```
+
+## CHECK BEST FITTING DISTRIBUTIONS
+
+### BETA
+```{r}
+beta.fit.dcm <- fitdist(filter(tbdt1, section=="HOT" & environment=="dcm")$RA1, "beta")
+plot(beta.fit.dcm)
+```
+
+```{r}
+beta.fit.srf <- fitdist(filter(tbdt1, section=="HOT" & environment=="surface")$RA1, "beta")
+plot(beta.fit.srf)
+```
+
+### LOG NORMAL (GAUSSIAN)
+```{r}
+lnorm.fit.dcm <- fitdist(filter(tbdt1, section=="HOT" & environment=="dcm")$RA, "lnorm")
+plot(lnorm.fit.dcm)
+```
+
+```{r}
+lnorm.fit.srf <- fitdist(filter(tbdt1, section=="HOT" & environment=="surface")$RA1, "lnorm")
+plot(lnorm.fit.srf)
+```
+
+### GAMMA
+```{r}
+gamma.fit.dcm <- fitdist(filter(tbdt1, section=="HOT" & environment=="dcm")$RA1, "gamma")
+plot(gamma.fit.dcm)
+```
+
+```{r}
+gamma.fit.srf <- fitdist(filter(tbdt1, section=="HOT" & environment=="surface")$RA1, "gamma")
+plot(gamma.fit.srf)
+```
+
+There is some wonkiness with Beta, gamma, and  lognormal. The quantiles maybe look better with the beta distribution? but really not much more so than gamma. The bad thing is that "special" families (`class extended.family`) like betar are not available with gamm. You only get the standard ones for glm/lme/gam (see `?family`). Since we can only use the corCAR1 correlation structure with gamm we basically have to choose whether we want beta or corCAR1... Since gamma distribution seems decent enough fit for this I am going to choose having the corCAR1 autocorrelation structure since we know this is timeseries data and should be correlated.
+
+Temporal autocorrelation. 
+```{r}
+ggplot(tbdt1) + 
+  geom_point(aes(x=date, y=RA1, color=section)) + facet_wrap(~environment)
+
+t <- filter(tbdt1, section=="HOT" & environment=="dcm")
+acf(t$RA1)
+```
+
+From just a cursory look it does not appear that there is autocorrelation present ( there should be). I think the sampling is probably too sparse and the dynamics are too irregular. I think we should still include this term because it can help to prevent overfitting. see here - https://fromthebottomoftheheap.net/2011/07/21/smoothing-temporally-correlated-data/
+
+## FIT GAMMS
+```{r}
+t <- tbdt1 %>% 
+  filter(section=="HOT") %>%
+  filter(environment == "dcm") %>%
+  as.data.frame()
+
+t2 <- gamlss(formula = RA1 ~ cs(dayOfYear, k=5) + cs(timeOfSampling, k=5), 
+             family = BE(mu.link = "logit", sigma.link = "logit"),
+             data=t)
+```
+
+
+```{r}
+with_preserve_seed(
+   tidy.gamresults.RA1 <- tbdt1 %>%
+      filter(environment == "dcm") %>%
+      group_by(section) %>%
+      group_modify( ~ broom::tidy(
+         gamm(
+            RA1 ~ s(dayOfYear, bs = "cc", k = 5) + s(timeOfSampling, k = 5),
+            family = Gamma(link = "inverse"),
+            correlation = corCAR1(form = ~ timeOfSampling),
+            data = .x
+         )$gam
+      ))
+)
+
+with_preserve_seed(
+   tidy.gamresults.LLI <- tbdt1 %>%
+      filter(environment == "dcm") %>%
+      group_by(section) %>%
+      group_modify( ~ broom::tidy(
+         gamm(
+            pro_LLI ~ s(dayOfYear, bs = "cc", k = 5) + s(timeOfSampling, k = 5),
+            family = Gamma(link = "inverse"),
+            correlation = corCAR1(form = ~ timeOfSampling),
+            data = .x
+         )$gam
+      ))
+)
+
+with_preserve_seed(
+   tidy.gamresults.HLII <- tbdt1 %>%
+      filter(environment == "dcm") %>%
+      group_by(section) %>%
+      group_modify( ~ broom::tidy(
+         gamm(
+            pro_HLII ~ s(dayOfYear, bs = "cc", k = 5) + s(timeOfSampling, k = 5),
+            family = Gamma(link = "inverse"),
+            correlation = corCAR1(form = ~ timeOfSampling),
+            data = .x
+         )$gam
+      ))
+)
+```
+
+```{r}
+with_preserve_seed(
+   tidy.gammods.RA1 <- tbdt1 %>%
+      filter(environment == "dcm") %>%
+      group_by(section) %>%
+      group_map(
+         ~ gamm(
+            RA1 ~ s(dayOfYear, bs = "cc", k = 5) + s(timeOfSampling, k = 5),
+            family = Gamma(link = "identity"),
+            correlation = corCAR1(form = ~ timeOfSampling),
+            data = .x
+         )
+      )
+)
+
+with_preserve_seed(
+   tidy.gammods.LLI <- tbdt1 %>%
+      filter(environment == "dcm") %>%
+      group_by(section) %>%
+      group_map(
+         ~ gamm(
+            pro_LLI ~ s(dayOfYear, bs = "cc", k = 5) + s(timeOfSampling, k = 5),
+            family = Gamma(link = "identity"),
+            correlation = corCAR1(form = ~ timeOfSampling),
+            data = .x
+         )
+      )
+)
+
+with_preserve_seed(
+   tidy.gammods.HLII <- tbdt1 %>%
+      filter(environment == "dcm") %>%
+      group_by(section) %>%
+      group_map(
+         ~ gamm(
+            pro_HLII ~ s(dayOfYear, bs = "cc", k = 5) + s(timeOfSampling, k = 5),
+            family = Gamma(link = "identity"),
+            correlation = corCAR1(form = ~ timeOfSampling),
+            data = .x
+         )
+      )
+)
+```
+
+### CHECK FOR CORRELATED RESIDUALS in GAMM
+All good...
+```{r}
+pacf(resid(tidy.gammods.LLI[[2]]$gam))
+```
+
+## PRIMARY PRODUCTION DATA
+"Data obtained via the Hawaii Ocean Time-series HOT-DOGS application; University of Hawai'i at Mānoa. National Science Foundation Award # 1756517"
+```{r}
+#PP in mg/m2/day
+pp <- tibble::tribble(
+         ~crn,    ~date, ~julian,     ~PP,
+         144L, "011703",   5221L, 734.308,
+         145L, "022603",   5261L, 545.333,
+         146L, "032903",   5292L,  667.85,
+         147L, "042403",   5318L, 622.667,
+         148L, "052103",   5345L, 414.175,
+         149L, "062003",   5375L, 651.421,
+         150L, "072003",   5405L,  631.35,
+         151L, "082103",   5437L, 667.983,
+         152L, "101503",   5492L, 446.858,
+         153L, "111003",   5518L, 508.258,
+         154L, "122003",   5558L, 415.292,
+         155L, "012204",   5591L, 277.925,
+         156L, "022504",   5625L, 323.567,
+         157L, "032004",   5649L, 533.217,
+         158L, "042104",   5681L,   670.3,
+         159L, "051904",   5709L,   848.8,
+         160L, "061604",   5737L, 650.842,
+         162L, "081604",   5798L, 656.292,
+         163L, "092904",   5842L, 524.608,
+         164L, "103104",   5874L, 569.917,
+         165L, "112804",   5902L, 343.633,
+         166L, "122104",   5925L, 359.025
+         ) %>%
+  mutate(date = mdy(date)) %>%
+  mutate(season = getSeason(date))
+
+ppp <- ggplot(pp) + 
+  geom_point(aes(x=date, y=PP, shape=season)) +
+  geom_line(aes(x=date, y=PP)) +
+  labs(x="", y="Primary Production") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=8),
+        plot.margin=unit(c(0,0,0,0),"cm"))
+
+ppp
+```
+
+## FINAL PLOT OF SEASONAL EFFECTS
+```{r}
+pseason <- 
+  bind_rows(evaluate_smooth(tidy.gammods.RA1[[1]]$gam, "s(dayOfYear)") %>% mutate(env="BATS", var="RA"),
+            evaluate_smooth(tidy.gammods.HLII[[1]]$gam, "s(dayOfYear)") %>% mutate(env="BATS", var="HLII"),
+            evaluate_smooth(tidy.gammods.LLI[[1]]$gam, "s(dayOfYear)") %>% mutate(env="BATS", var="LLI"),
+            evaluate_smooth(tidy.gammods.RA1[[2]]$gam, "s(dayOfYear)") %>% mutate(env="HOT", var="RA"),
+            evaluate_smooth(tidy.gammods.HLII[[2]]$gam, "s(dayOfYear)") %>% mutate(env="HOT", var="HLII"),
+            evaluate_smooth(tidy.gammods.LLI[[2]]$gam, "s(dayOfYear)") %>% mutate(env="HOT", var="LLI")) %>%
+  mutate(env=factor(env, levels=c("BATS", "HOT"))) %>%
+  ggplot() + 
+    geom_ribbon(aes(x=dayOfYear, ymin = est - se, ymax =  est + se, fill=var), alpha=0.3) + 
+    geom_line(aes(x=dayOfYear, y=est, color=var)) + 
+    geom_vline(xintercept=79) +  # spring
+    geom_vline(xintercept=172) + # summer
+    geom_vline(xintercept=265) + # fall
+    geom_vline(xintercept=365) + # winter
+    facet_grid(~env) + 
+    labs(y="Modeled Seasonal Effect at DCM", x="Day of Year") + 
+    scale_color_brewer(palette="Dark2") +
+    scale_fill_brewer(palette="Dark2") +
+    theme_bw() +
+    theme(legend.position = "none",
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.margin=unit(c(0,0,0,0),"cm"))
+
+ggsave(here::here("figs", "modeled_seasonal_effect.svg"), plot=pseason,
+       device="svg", height=4.7, width=9, units="cm")
+
+pseason 
+```
+
+
+```{r}
+ptimeseries <- phot + pbats + pseason + guide_area() + plot_layout(guides="collect",
+                                       ncol=2, 
+                                       nrow=2,
+                                       heights=c(2, 1.5)) + plot_annotation(tag_levels = 'A')
+
+ptimeseries
+```
+
+```{r}
+ggsave(here::here("figs", "FigS_timeseries.svg"), plot=ptimeseries,
+       device="svg", height=12, width=17, units="cm")
+```
+
+
+```{r}
+library(patchwork)
+```
+

@@ -1,0 +1,196 @@
+---
+title: "Selecting marker genes and determining abundances"
+output: html_notebook
+---
+
+```{r}
+library(magrittr)
+library(tidyverse)
+library(here)
+```
+
+## read metadata
+```{r}
+gt <- read_tsv(here::here("data", "geotraces_formatted_metadata.tsv"))
+ta <- read_tsv(here::here("data", "tara_formatted_metadata.tsv"))
+ts <- read_tsv(here::here("data", "hot_bats.tsv"))
+```
+
+```{r}
+samples <- bind_rows(select(gt, sampleID), select(ta, sampleID), select(ts, sampleID)) %>% pull
+```
+
+## read markers
+```{r}
+markers_sim <- read_tsv(here::here("data", "simons_markers_combined.tsv"),
+                        col_names=c("sampleID", "group", "COG", "total_reads", "count", "marker_length"),
+                        col_types="cccddd")
+
+markers_tar <- read_tsv(here::here("data", "tara_markers_combined.tsv"),
+                         col_types="cccddd")
+
+d0 <- bind_rows(markers_sim, markers_tar) %>%
+  filter(group=="prochlorococcus") %>% 
+  mutate(count = replace_na(count, 0))
+```
+
+normalize by marker length
+need to length norm because we do within sample comparisons
+```{r}
+d1 <- d0 %>%
+  filter(sampleID %in% samples) %>%
+  mutate(RPK = count/marker_length * 1e3)
+```
+
+## read TBDT counts
+```{r}
+tbdt_sim <- read_tsv(here::here("data", "simons_TBDT_combined.tsv"),
+                        col_names=c("sampleID", "group", "COG", "total_reads", "count", "marker_length"),
+                        col_types="cccddd")
+
+tbdt_tar <- read_tsv(here::here("data", "tara_TBDT_combined.tsv"),
+                         col_types="cccddd")
+
+s0 <- bind_rows(tbdt_sim, tbdt_tar) %>%
+  filter(group=="prochlorococcus") %>% 
+  mutate(count = replace_na(count, 0))
+```
+
+length normalize
+```{r}
+s1 <- s0 %>% 
+  mutate(RPK_prochlorococcus_TBDT = count/marker_length * 1e3) %>%
+  select(sampleID, RPK_prochlorococcus_TBDT, W=count)
+```
+
+# Filter samples
+
+remove samples with low prochlorococcus coverage
+
+median of all length-norm markers (some samples are missing markers!)
+get length norm median per COG (account for missing COGs in some SIDs)
+
+compute median of set x, fill set up 'to' length 'with' default 0. Also replace
+NA 'with'
+```{r}
+median_fill_up <- function(x, to=length(x), with=0){
+    if(to<length(x)) stop("to needs to be >= length(x)")
+    x <- as.vector(na.omit(x))
+    x <- c(x, rep(with, to-length(x)))
+    median(x)
+}
+```
+
+```{r}
+COG_n <- d0$COG %>% 
+  unique %>% 
+  length
+
+d1s1 <- d1 %>% 
+  group_by(group, sampleID) %>%
+  summarize(RPK_COG_median=median_fill_up(RPK, COG_n))
+```
+
+drop all samples with less than 100X median coverage per Marker
+```{r}
+d2 <- d1s1 %>% 
+  filter(group=="prochlorococcus" & RPK_COG_median > 100) %>%
+  ungroup %>% select(sampleID) %>%
+  right_join(d1, .)
+```
+
+# Filter bad marker families
+q10 and q90 markers but this ignores the fact that COGs are missing from some SIDs (not even 0s)
+```{r}
+d2s1 <- d2 %>%
+    replace_na(list(count=0, RPK=0)) %>%
+    group_by(group, sampleID) %>%
+    summarize(
+        RPK_q10=quantile(RPK, probs=.10),
+        RPK_q90=quantile(RPK, probs=.90))
+```
+
+```{r}
+d3 <- d2 %>% left_join(d2s1) %>%
+    filter(RPK > RPK_q10 & RPK < RPK_q90)
+```
+
+get COGS only present in all samples
+```{r}
+COGs_universal <- d3 %>% filter(group=="prochlorococcus") %>%
+    group_by(COG) %>%
+    summarize(COG_n = n()) %>%
+    filter(COG_n == max(COG_n)) %>%
+    pull(COG)
+```
+
+drop non-universal COGs
+```{r}
+d4 <- d3 %>% filter(COG %in% COGs_universal)
+```
+
+```{r}
+d4$COG %>% unique %>% length
+```
+
+get quantiles
+```{r}
+d4s1 <- d4 %>% group_by(sampleID, group) %>%
+    summarize(
+        M=first(total_reads),
+        RPK_total_prochlorococcus_reads=sum(RPK),
+        RPK_prochlorococcus_marker_median=median(RPK)) %>%
+  select(sampleID, RPK_total_prochlorococcus_reads, RPK_prochlorococcus_marker_median, M)
+```
+
+```{r}
+s2 <- inner_join(d4s1, s1, by="sampleID") %>%
+  select(sampleID, RPK_prochlorococcus_TBDT, RPK_total_prochlorococcus_reads,	
+         RPK_prochlorococcus_marker_median, W, M) %>%
+  mutate(RA=RPK_prochlorococcus_TBDT/RPK_prochlorococcus_marker_median)
+```
+
+Compile global siderophore and Pro abundance with time series averaged
+
+```{r}
+s2.global <- s2 %>%
+  filter(!(sampleID %in% pull(ts, sampleID)))
+```
+
+```{r}
+read_tsv(here::here("data", "hot_bats_mean.tsv"))
+```
+
+```{r}
+s2.ts.avg <- semi_join(s2, ts) %>%
+  left_join(ts) %>%
+  group_by(section, environment) %>%
+  summarize(RPK_prochlorococcus_TBDT=mean(RPK_prochlorococcus_TBDT),
+            RPK_total_prochlorococcus_reads=mean(RPK_total_prochlorococcus_reads),
+            RPK_prochlorococcus_marker_median=mean(RPK_prochlorococcus_marker_median),
+            W=round(mean(W)),
+            M=round(mean(M)),
+            RA=mean(RA)) %>%
+  ungroup() %>%
+  mutate(sampleID=case_when(section=="BATS" & environment=="surface" ~ "S0582",
+                            section=="BATS" & environment=="dcm" ~ "S0583",
+                            section=="BATS" & environment=="mixed.layer" ~ "S0584",
+                            section=="HOT" & environment=="surface" ~ "S0528",
+                            section=="HOT" & environment=="dcm" ~ "S0529",
+                            section=="HOT" & environment=="mixed.layer" ~ "S0530",
+                            )) %>%
+  relocate(sampleID) %>%
+  select(-section, -environment)
+```
+
+```{r}
+bind_rows(s2.global, s2.ts.avg) %>%
+  write_tsv(here::here("output", "siderophore_abundance_global.tsv"))
+```
+
+Compile timseries siderophore and Pro abundance 
+```{r}
+semi_join(s2, ts) %>%
+  write_tsv(here::here("output", "siderophore_abundance_hot_bats.tsv"))
+```
+

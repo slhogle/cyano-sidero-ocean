@@ -1,0 +1,67 @@
+new_gene	new_genome	old_gene	old_genome	group	clade	station	depth
+000705_2000062	2000062_prochlorococcus	AG-331-C07_00717	AG-331-C07	Prochlorococcus	LLI	BIGRAPA4	112
+000388_2000403	2000403_prochlorococcus	AG-455-B05_00397	AG-455-B05	Prochlorococcus	LLI	GP13-22	50
+001099_2000276	2000276_prochlorococcus	AG-402-O21_01115	AG-402-O21	Prochlorococcus	LLI	HOT	100
+000703_2000089	2000089_prochlorococcus	AG-341-E15_00713	AG-341-E15	Prochlorococcus	LLI	BIGRAPA7	180
+000590_2000666	2000666_synechococcus	AG-679-B21_00606	AG-679-B21	Synechococcus	Subcluster 5.1A	GRADIENT6	60
+000632_2000648	2000648_synechococcus	AG-670-F04_00643	AG-670-F04	Synechococcus	Subcluster 5.1A	GRADIENT4	5
+000478_2000077	2000077_prochlorococcus	AG-335-E22_00492	AG-335-E22	Prochlorococcus	HLI	BIGRAPA4	14
+000335_2000133	2000133_prochlorococcus	AG-347-L13_00348	AG-347-L13	Prochlorococcus	HLII	HOT	5
+000510_2000055	2000055_prochlorococcus	AG-321-M21_00526	AG-321-M21	Prochlorococcus	HLI	BIGRAPA4	14
+001491_2000675	2000675_synechococcus	AG-683-C23_01518	AG-683-C23	Synechococcus	Subcluster 5.1A	GRADIENT6	5
+001110_2000245	2000245_prochlorococcus	AG-402-G19_01132	AG-402-G19	Prochlorococcus	LLI	HOT	100
+001688_2000270	2000270_prochlorococcus	AG-402-N09_01720	AG-402-N09	Prochlorococcus	LLI	HOT	100
+000840_2000673	2000673_synechococcus	AG-683-B03_00848	AG-683-B03	Synechococcus	Subcluster 5.1A	GRADIENT6	5
+000141_613203	613203_prochlorococcus	W12_00142	W12	Prochlorococcus	HLIV	marshall_islands	15
+000082_2000438	2000438_prochlorococcus	AG-469-F22_00083	AG-469-F22	Prochlorococcus	HLI	GP13-GT19	100
+000995_2000243	2000243_prochlorococcus	AG-402-G08_01011	AG-402-G08	Prochlorococcus	LLI	HOT	100
+000420_2000482	2000482_prochlorococcus	AG-683-K15_00433	AG-683-K15	Prochlorococcus	HLI	GRADIENT9	5
+001323_2000668	2000668_synechococcus	AG-679-D13_01342	AG-679-D13	Synechococcus	Subcluster 5.1A	GRADIENT6	60
+001370_1570014	1570014_prochlorococcus	MIT0917_01394	MIT0917	Prochlorococcus	LLI	HOT	200
+001208_1203261	1203261_prochlorococcus	W02_01238	W02	Prochlorococcus	HLIV	marshall_islands	15
+001391_1570010	1570010_prochlorococcus	MIT0913_01415	MIT0913	Prochlorococcus	LLI	HOT	175
+000173_569153	569153_prochlorococcus	W04_00175	W04	Prochlorococcus	HLIV	marshall_islands	15
+000879_2000643	2000643_synechococcus	AG-670-A04_00894	AG-670-A04	Synechococcus	Subcluster 5.1A	GRADIENT4	5
+001404_2000248	2000248_prochlorococcus	AG-402-I05_01436	AG-402-I05	Prochlorococcus	LLI	HOT	100
+001254_93058	93058_prochlorococcus	MIT9202_01285	MIT9202	Prochlorococcus	HLII	fiji	79
+001127_2000014	2000014_prochlorococcus	AG-311-D23_01152	AG-311-D23	Prochlorococcus	LLI	BIGRAPA1	20
+000607_2000645	2000645_synechococcus	AG-670-A19_00612	AG-670-A19	Synechococcus	Subcluster 5.1A	GRADIENT4	5
+000360_2000487	2000487_prochlorococcus	AG-686-J21_00364	AG-686-J21	Prochlorococcus	HLI	GRADIENT9	65
+000786_2000681	2000681_synechococcus	AG-686-C21_00795	AG-686-C21	Synechococcus	Subcluster 5.1A	GRADIENT9	65
+000306_2000250	2000250_prochlorococcus	AG-402-I21_00308	AG-402-I21	Prochlorococcus	LLI	HOT	100
+001192_2000422	2000422_prochlorococcus	AG-459-P07_01212	AG-459-P07	Prochlorococcus	LLI	GP13-38	75
+000494_2000660	2000660_synechococcus	AG-676-E04_00506	AG-676-E04	Synechococcus	Subcluster 5.1A	GRADIENT6	5
+000303_2000057	2000057_prochlorococcus	AG-321-P21_00311	AG-321-P21	Prochlorococcus	HLI	BIGRAPA4	14
+000304_2000057	2000057_prochlorococcus	AG-321-P21_00312	AG-321-P21	Prochlorococcus	HLI	BIGRAPA4	14
+001410_2000680	2000680_synechococcus	AG-686-B21_01438	AG-686-B21	Synechococcus	Subcluster 5.1A	GRADIENT9	65
+001745_2000238	2000238_prochlorococcus	AG-402-C09_01781	AG-402-C09	Prochlorococcus	LLI	HOT	100
+000798_2000472	2000472_prochlorococcus	AG-679-I23_00818	AG-679-I23	Prochlorococcus	LLI	GRADIENT6	60
+001101_2000047	2000047_prochlorococcus	AG-321-E21_01121	AG-321-E21	Prochlorococcus	HLI	BIGRAPA4	14
+001062_2000654	2000654_synechococcus	AG-673-B08_01081	AG-673-B08	Synechococcus	Subcluster 5.1A	GRADIENT4	90
+000237_2000653	2000653_synechococcus	AG-673-B04_00244	AG-673-B04	Synechococcus	Subcluster 5.1A	GRADIENT4	90
+000181_2000665	2000665_synechococcus	AG-679-B05_00183	AG-679-B05	Synechococcus	Subcluster 5.1A	GRADIENT6	60
+001417_2000503	2000503_prochlorococcus	MIT1013_01442	MIT1013	Prochlorococcus	LLI	BIGRAPA7	150
+000557_2000020	2000020_prochlorococcus	AG-311-K21_00566	AG-311-K21	Prochlorococcus	LLI	BIGRAPA1	20
+000356_2000050	2000050_prochlorococcus	AG-321-G21_00362	AG-321-G21	Prochlorococcus	HLI	BIGRAPA4	14
+001815_2000265	2000265_prochlorococcus	AG-402-L23_01850	AG-402-L23	Prochlorococcus	HLII	HOT	100
+000701_93057	93057_prochlorococcus	MIT9201_00717	MIT9201	Prochlorococcus	HLII	fiji	0
+001351_2000264	2000264_prochlorococcus	AG-402-L20_01381	AG-402-L20	Prochlorococcus	LLI	HOT	100
+000918_323261			Nitrosococcus oceani ATCC 19707	Gammaproteobacteria			
+003723_1073573			SAR324 cluster bacterium JCVI-SC AAA005	Deltaproteobacteria			
+000100_939909			Verrucomicrobia bacterium SCGC AAA300-K03	Verrucomicrobia			
+002979_58051			Moritella sp. PE36	Gammaproteobacteria			
+000188_2000000			OCS116 cluster alphaproteobacterium AG-343-E15	Alphaproteobacteria			
+004373_338187			Vibrio campbellii ATCC BAA-1116	Gammaproteobacteria			
+000476_1811648			SAR86 cluster bacterium REDSEA-S45_B6	Gammaproteobacteria			
+000938_1811645			SAR86 cluster bacterium REDSEA-S21_B7	Gammaproteobacteria			
+001238_1811642			SAR86 cluster bacterium REDSEA-S08_B3	Gammaproteobacteria			
+001287_1811643			SAR86 cluster bacterium REDSEA-S09_B4	Gammaproteobacteria			
+001564_298386			Photobacterium profundum SS9	Gammaproteobacteria			
+001935_321327			Synechococcus sp. JA-3-3Ab	Freshwater Synechococcus			
+002626_321332			Synechococcus sp. JA-2-3Ba2-13	Freshwater Synechococcus			
+003133_374981			Synechococcus sp. PCC 7003	Freshwater Synechococcus			
+003029_374982			Synechococcus sp. PCC 73109	Freshwater Synechococcus			
+003141_32049			Synechococcus sp. PCC 7002	Freshwater Synechococcus			
+000264_490193			Synechococcus sp. NKBG042902	Freshwater Synechococcus			
+003097_195248			Synechococcus sp. PCC 8807	Freshwater Synechococcus			
+003033_195498			Synechococcus sp. PCC 7117	Freshwater Synechococcus			

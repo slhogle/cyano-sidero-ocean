@@ -1,0 +1,86 @@
+---
+title: "HOT BATS Formatting, imputing, and finalizing data"
+output:   
+  github_document:
+    toc: yes
+    toc_depth: 2
+    fig_width: 7
+    fig_height: 5
+    dev: png
+    keep_html: yes
+    html_preview: yes
+---
+
+```{r message=FALSE, warning=FALSE}
+library(here)
+library(readr)
+library(tidyverse)
+library(fuzzyjoin)
+library(lubridate)
+library(magrittr)
+```
+
+# Read data
+
+## HOT/BATS
+```{r eval=FALSE, include=TRUE}
+ts <- read_tsv(here::here("data", "hot_bats", "hot_bats_formatted_metadata.tsv"), col_types = c("ccccccDtdddccc")) 
+```
+
+## Ecotypes
+```{r eval=FALSE, include=TRUE}
+ecotypes <- read_tsv(here::here("data", "intermediate_files", "ecotypes_formatted.tsv")) 
+```
+
+## Longhursts
+```{r eval=FALSE, include=TRUE}
+longhurst <- read_tsv(here::here("data", "longhurst_province", "longhurst_codes.tsv"),
+                     col_names = c("sampleID", "lat", "lon", "LongCode", "Longtmp")) %>%
+  separate(col=Longtmp, into=c("LongWind", "LongDesc"), sep=" - ")
+```
+## Darwin
+```{r}
+darwin <- read_tsv(here::here("data", "darwin_clim_mean", "dFeT_timeseries.tsv")) 
+```
+
+# Format
+
+Add ecotype abundances, longhurst codes, and darwin climatological average to timeseries
+```{r message=FALSE, warning=FALSE}
+timeseries.final <- ts %>% 
+  mutate(environment=case_when(depth < 150 & depth > 25 ~ "dcm",
+                               depth <= 25 ~ "surface",
+                               depth > 150 & depth < 300 ~ "mixed.layer",
+                               depth > 300 ~ "mesopelagic")) %>%
+  mutate(dcm.layer=ifelse(environment=="dcm", 1, 0),
+         dcm.max=ifelse(environment=="dcm", 1, 0)) %>%
+  select(-depth_category, -replicate, -time, -station_num_BODC, -bottle_num_BODC) %>%
+  mutate(date = ymd(date)) %>%
+  left_join(., ecotypes) %>%
+  left_join(., longhurst) %>%
+  left_join(., darwin) %>%
+  arrange(section, date, depth) %>%
+  mutate(lat=round(lat, 3), lon=round(lon, 3))
+
+write_tsv(timeseries.final, here::here("output", "hot_bats.tsv"))
+```
+
+Reduce to a single averaged value for each location/depth. This averaged value will be used in the global dataset. Not appropriate to include correlated/repeated measures with the model we are using espsecially since the repeated measures are very skewed to one location and time range.
+
+```{r}
+timeseries.summarized <- timeseries.final %>%
+  select(-LongCode, -LongWind, -LongDesc) %>%
+  group_by(lat, lon, environment) %>%
+  mutate_at(vars(depth,pro_HLI:FeT_darwin_clim), mean, na.rm = TRUE) %>%
+  ungroup() %>%
+  distinct(lat, lon, environment, .keep_all=TRUE) %>%
+  mutate(ocean_category=case_when(section=="BATS" ~ "north atlantic",
+                                   section=="HOT" ~ "north pacific")) %>%
+  mutate(chla_norm=case_when(environment=="dcm" ~ 1,
+                             environment=="mesopelagic" ~ 0))
+```
+
+```{r}
+write_tsv(timeseries.summarized, here::here("data", "intermediate_files", "hot_bats_mean.tsv"))
+```
+

@@ -1,0 +1,267 @@
+---
+title: "transporter prevalence"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(here)
+```
+
+## Load data
+```{r}
+pro_syn_meta <- read_tsv(here("data", "pro_syn_metadata.tsv")) %>% 
+  mutate(taxclade1=case_when(str_detect(taxclade, "syn5.1A") ~ "syn5.1A",
+                             str_detect(taxclade, "syn5.1B") ~ "syn5.1B",
+                             TRUE ~ taxclade))
+```
+
+## format siderophore count data
+```{r}
+pro_nogs <- read_tsv(here("data", "prochlorococcus.emapper.annotations"),
+         col_names = c("query_name", "seed.eggnog.ortholog", "seed.ortholog.evalue", 
+                       "seed.ortholog.score", "predicted.taxonomic.group", "predicted.protein.name", 
+                       "gene.ontology.terms", "ec.number", "kegg_ko", "kegg_pathway", "kegg_module", 
+                       "kegg_rxn", "kegg_rclass", "kegg_brite", "kegg_tc", "cazy", "bigg_rxn", 
+                       "tax_scope", "eggnog.orthologous.groups", 
+                       "bestOG", "cog_funct", "description"), 
+         col_types="ccddcccccccccccccccccc"
+) %>%
+  separate(query_name, c("genome", "contig", "gene_no", "start", "end", "strand"), sep = "_", remove = FALSE) %>%
+  mutate(contig=as.numeric(as.character(contig)),
+         gene_no=as.numeric(as.character(gene_no)),
+         start=as.numeric(as.character(start)),
+         end=as.numeric(as.character(end)))
+```
+
+```{r}
+syn_nogs <- read_tsv(here("data", "synechococcus.emapper.annotations"),
+         col_names = c("query_name", "seed.eggnog.ortholog", "seed.ortholog.evalue", 
+                       "seed.ortholog.score", "predicted.taxonomic.group", "predicted.protein.name", 
+                       "gene.ontology.terms", "ec.number", "kegg_ko", "kegg_pathway", "kegg_module", 
+                       "kegg_rxn", "kegg_rclass", "kegg_brite", "kegg_tc", "cazy", "bigg_rxn", 
+                       "tax_scope", "eggnog.orthologous.groups", 
+                       "bestOG", "cog_funct", "description"), 
+         col_types="ccddcccccccccccccccccc"
+) %>%
+  separate(query_name, c("genome", "contig", "gene_no", "start", "end", "strand"), sep = "_", remove = FALSE) %>%
+  mutate(contig=as.numeric(as.character(contig)),
+         gene_no=as.numeric(as.character(gene_no)),
+         start=as.numeric(as.character(start)),
+         end=as.numeric(as.character(end)))
+```
+
+COG1120 - ATPase
+COG0609 - permease (FecD)
+COG4771 - TBDT /COG1629
+COG0614 - SBP
+COG0810 - tonB
+COG0811 - exbB
+COG0848 - exbD
+
+# BY CLADES
+```{r}
+pro_a <- pro_nogs %>%
+  mutate(genome_contig = paste(genome, "_", contig, sep="")) %>%
+  filter(str_detect(eggnog.orthologous.groups, "COG1120|COG0609|COG4771|COG0614|COG0810|COG0811|COG0848")) %>%
+  mutate(gene = case_when(str_detect(eggnog.orthologous.groups, "COG1120") ~ "ATPase",
+                          str_detect(eggnog.orthologous.groups, "COG0609") ~ "perm",
+                          str_detect(eggnog.orthologous.groups, "COG4771") ~ "TBDT", 
+                          str_detect(eggnog.orthologous.groups, "COG0614") ~ "SBP",
+                          str_detect(eggnog.orthologous.groups, "COG0810") ~ "tonB",
+                          str_detect(eggnog.orthologous.groups, "COG0811") ~ "exbB",
+                          str_detect(eggnog.orthologous.groups, "COG0848") ~ "exbD",
+                          TRUE ~ NA_character_)) %>%
+  group_by(genome) %>%
+  arrange(genome, gene_no) %>%
+  dplyr::select(query_name, genome, gene, contig, gene_no, start, end) %>%
+  mutate(len=abs(start-end)) %>%
+  mutate(operon_len=sum(len, na.rm=T)) %>%
+  mutate(operon_len=ifelse(operon_len==0, NA_real_, operon_len)) %>%
+  select(genome, operon_len) %>%
+  distinct()
+
+syn_a <- syn_nogs %>%
+  mutate(genome_contig = paste(genome, "_", contig, sep="")) %>%
+  filter(str_detect(eggnog.orthologous.groups, "COG1120|COG0609|COG4771|COG0614|COG0810|COG0811|COG0848")) %>%
+  mutate(gene = case_when(str_detect(eggnog.orthologous.groups, "COG1120") ~ "ATPase",
+                          str_detect(eggnog.orthologous.groups, "COG0609") ~ "perm",
+                          str_detect(eggnog.orthologous.groups, "COG4771") ~ "TBDT", 
+                          str_detect(eggnog.orthologous.groups, "COG0614") ~ "SBP",
+                          str_detect(eggnog.orthologous.groups, "COG0810") ~ "tonB",
+                          str_detect(eggnog.orthologous.groups, "COG0811") ~ "exbB",
+                          str_detect(eggnog.orthologous.groups, "COG0848") ~ "exbD",
+                          TRUE ~ NA_character_)) %>%
+  group_by(genome) %>%
+  arrange(genome, gene_no) %>%
+  dplyr::select(query_name, genome, gene, contig, gene_no, start, end) %>%
+  mutate(len=abs(start-end)) %>%
+  mutate(operon_len=sum(len, na.rm=T)) %>%
+  mutate(operon_len=ifelse(operon_len==0, NA_real_, operon_len)) %>%
+  select(genome, operon_len) %>%
+  distinct()
+
+b <- left_join(bind_rows(pro_a, syn_a), pro_syn_meta) %>%
+  mutate(taxclade=case_when(str_detect(taxclade, "syn5.1A") ~ "syn5.1A",
+                             str_detect(taxclade, "syn5.1B") ~ "syn5.1B",
+                             str_detect(taxclade, "syn5.2") ~ "syn5.2",
+                             str_detect(taxclade, "syn5.3") ~ "syn5.3",
+                             TRUE ~ taxclade)) %>%
+  group_by(taxclade) %>%
+  summarize(sum_operon=sum(operon_len, na.rm=T),
+            mean_operon=mean(operon_len, na.rm=T),
+            n_operon=n()) %>%
+  ungroup() %>%
+  replace_na(list(mean_operon = 0))
+
+c <- pro_syn_meta %>%
+    mutate(taxclade=case_when(str_detect(taxclade, "syn5.1A") ~ "syn5.1A",
+                             str_detect(taxclade, "syn5.1B") ~ "syn5.1B",
+                             str_detect(taxclade, "syn5.2") ~ "syn5.2",
+                             str_detect(taxclade, "syn5.3") ~ "syn5.3",
+                             TRUE ~ taxclade)) %>%
+  filter(!is.na(genome_size)) %>%
+  select(genome, taxclade, comp=complete, size=genome_size) %>%
+  mutate(comp=ifelse(comp==0, 0.05, comp/100)) %>%
+  mutate(estsize=size/(comp)) %>%
+  group_by(taxclade) %>%
+  summarize(sum_genome = sum(size),
+            sum_tgenome = sum(estsize),
+            mean_complete=mean(comp, na.rm=T),
+            n_genome=n()) %>%
+  ungroup()
+  
+RA_table1 <- left_join(b, c) %>%
+  group_by(taxclade) %>%
+  summarize(ramunas.est = round((n_operon/n_genome)/mean_complete*100, digits=1),
+            shane.est = round((sum_operon/sum_genome)*sum_tgenome/mean_operon/n_genome*100, digits=1),
+            fobs = round(n_operon/n_genome*100, digits=1))
+
+RA_table1
+```
+
+# BY PRO/SYN
+```{r}
+b <- left_join(bind_rows(pro_a, syn_a), pro_syn_meta) %>%
+  group_by(taxgroup) %>%
+  summarize(sum_operon=sum(operon_len, na.rm=T),
+            mean_operon=mean(operon_len, na.rm=T),
+            n_operon=n()) %>%
+  ungroup() %>%
+  replace_na(list(mean_operon = 0))
+
+c <- pro_syn_meta %>%
+  filter(!is.na(genome_size)) %>%
+  select(genome, taxgroup, comp=complete, size=genome_size) %>%
+  mutate(comp=ifelse(comp==0, 0.05, comp/100)) %>%
+  mutate(estsize=size/(comp)) %>%
+  group_by(taxgroup) %>%
+  summarize(sum_genome = sum(size),
+            sum_tgenome = sum(estsize),
+            mean_complete=mean(comp, na.rm=T),
+            n_genome=n()) %>%
+  ungroup()
+  
+RA_table2 <- left_join(b, c) %>%
+  group_by(taxgroup) %>%
+  summarize(ramunas.est = round((n_operon/n_genome)/mean_complete*100, digits=1),
+            shane.est = round((sum_operon/sum_genome)*sum_tgenome/mean_operon/n_genome*100, digits=1),
+            fobs = round(n_operon/n_genome*100, digits=1))
+
+RA_table2
+```
+# EXCLUDE N ATLANTIC, MED, RED SEA
+```{r}
+b <- left_join(bind_rows(pro_a, syn_a), pro_syn_meta) %>%
+  # mutate(taxclade=case_when(str_detect(taxclade, "syn5.1A") ~ "syn5.1A",
+  #                            str_detect(taxclade, "syn5.1B") ~ "syn5.1B",
+  #                            str_detect(taxclade, "syn5.2") ~ "syn5.2",
+  #                            str_detect(taxclade, "syn5.3") ~ "syn5.3",
+  #                            TRUE ~ taxclade)) %>%
+  group_by(taxclade) %>%
+  summarize(sum_operon=sum(operon_len, na.rm=T),
+            mean_operon=mean(operon_len, na.rm=T),
+            n_operon=n()) %>%
+  ungroup() %>%
+  replace_na(list(mean_operon = 0))
+
+c <- pro_syn_meta %>%
+  filter(!is.na(genome_size)) %>%
+  #filter(!(ocean %in% c("n_atlantic", "mediterranean", "red_sea"))) %>%
+  filter(ocean %in% c("n_pacific", "s_pacific")) %>%
+  # mutate(taxclade=case_when(str_detect(taxclade, "syn5.1A") ~ "syn5.1A",
+  #                            str_detect(taxclade, "syn5.1B") ~ "syn5.1B",
+  #                            str_detect(taxclade, "syn5.2") ~ "syn5.2",
+  #                            str_detect(taxclade, "syn5.3") ~ "syn5.3",
+  #                            TRUE ~ taxclade)) %>%
+  select(genome, taxclade, comp=complete, size=genome_size) %>%
+  mutate(comp=ifelse(comp==0, 0.05, comp/100)) %>%
+  mutate(estsize=size/(comp)) %>%
+  group_by(taxclade) %>%
+  summarize(sum_genome = sum(size),
+            sum_tgenome = sum(estsize),
+            mean_complete=mean(comp, na.rm=T),
+            n_genome=n()) %>%
+  ungroup()
+  
+RA_table3 <- left_join(b, c) %>%
+  group_by(taxclade) %>%
+  summarize(ramunas.est = round((n_operon/n_genome)/mean_complete*100, digits=1),
+            shane.est = round((sum_operon/sum_genome)*sum_tgenome/mean_operon/n_genome*100, digits=1),
+            fobs = round(n_operon/n_genome*100, digits=1),
+            n_genome=n_genome,
+            n_operon=n_operon)
+
+RA_table3
+```
+
+```{r}
+b <- left_join(bind_rows(pro_a, syn_a), pro_syn_meta) %>%
+  group_by(taxgroup) %>%
+  summarize(sum_operon=sum(operon_len, na.rm=T),
+            mean_operon=mean(operon_len, na.rm=T),
+            n_operon=n()) %>%
+  ungroup() %>%
+  replace_na(list(mean_operon = 0))
+
+c <- pro_syn_meta %>%
+  filter(!is.na(genome_size)) %>%
+  #filter(!(ocean %in% c("n_atlantic", "mediterranean", "red_sea"))) %>%
+  filter(ocean %in% c("n_pacific", "s_pacific")) %>%
+  select(genome, taxgroup, comp=complete, size=genome_size) %>%
+  mutate(comp=ifelse(comp==0, 0.05, comp/100)) %>%
+  mutate(estsize=size/(comp)) %>%
+  group_by(taxgroup) %>%
+  summarize(sum_genome = sum(size),
+            sum_tgenome = sum(estsize),
+            mean_complete=mean(comp, na.rm=T),
+            n_genome=n()) %>%
+  ungroup()
+  
+RA_table4 <- left_join(b, c) %>%
+  group_by(taxgroup) %>%
+  summarize(ramunas.est = round((n_operon/n_genome)/mean_complete*100, digits=1),
+            shane.est = round((sum_operon/sum_genome)*sum_tgenome/mean_operon/n_genome*100, digits=1),
+            fobs = round(n_operon/n_genome*100, digits=1))
+
+RA_table4
+```
+
+
+# RESULTS
+
+## SYNECHOCOCCUS
+- 39% of Synechococcus
+- 70% of Synechococcus 5.1A
+- 58% 5.1A II
+- 90% 5.1A III
+- 90% 5.1 AIV
+- 37% 5.1 A UCA
+
+## PROCHLOROCOCCUS
+- 16% Prochlorococcus
+- 5% HLII
+- ~100% HLIV
+- 18% HLI
+- 45% LLI
+

@@ -1,0 +1,229 @@
+---
+title: "Combining GEOTRACES and Tara Oceans data, imputing, and finalizing"
+output:   
+  github_document:
+    toc: yes
+    toc_depth: 2
+    fig_width: 7
+    fig_height: 5
+    dev: png
+    keep_html: yes
+    html_preview: yes
+---
+
+```{r message=FALSE, warning=FALSE}
+library(here)
+library(readr)
+library(tidyverse)
+library(fuzzyjoin)
+library(lubridate)
+library(magrittr)
+library(missRanger)
+library(withr)
+```
+
+# READ DATA
+
+## ecotypes
+```{r}
+ecotypes <- read_tsv(here::here("data", "intermediate_files", "ecotypes_formatted.tsv")) 
+```
+
+## mean HOT BATS
+```{r}
+hot_bats_mean <- read_tsv(here::here("data", "intermediate_files", "hot_bats_mean.tsv")) %>%
+  mutate(cruise_id=as.character(cruise_id))
+```
+
+## Global Darwin Climatological mean Fe
+```{r}
+darwin.global <- read_tsv(here::here("data", "darwin_clim_mean", "dFeT.tsv")) 
+```
+
+## Longhurst provinces
+```{r eval=FALSE, include=TRUE}
+longhurst <- read_tsv(here::here("data", "longhurst_province", "longhurst_codes.tsv"),
+                     col_names = c("sampleID", "lat", "lon", "LongCode", "Longtmp")) %>%
+  separate(col=Longtmp, into=c("LongWind", "LongDesc"), sep=" - ")
+```
+
+## GEOTRACES CTD data
+```{r message=FALSE, warning=FALSE}
+GA02.ctd <- read_tsv(here::here("data", "intermediate_files", "GA02_mg_ctd.tsv")) %>% mutate(section="GA02")
+GA03.ctd <- read_tsv(here::here("data", "intermediate_files", "GA03_mg_ctd.tsv")) %>% mutate(section="GA03")
+GA10.ctd <- read_tsv(here::here("data", "intermediate_files", "GA10_mg_ctd.tsv")) %>% mutate(section="GA10")
+GP13.ctd <- read_tsv(here::here("data", "intermediate_files", "GP13_mg_ctd.tsv")) %>% mutate(section="GP13")
+
+ctd <- bind_rows(GA02.ctd, 
+                 GA03.ctd, 
+                 GA10.ctd, 
+                 GP13.ctd)
+```
+
+## GEOTRACES bottle data
+```{r}
+GA02.btl <- read_tsv(here::here("data", "intermediate_files", "GA02_mg_bottle.tsv")) %>% mutate(section="GA02")
+GA03.btl <- read_tsv(here::here("data", "intermediate_files", "GA03_mg_bottle.tsv")) %>% mutate(section="GA03")
+GA10.btl <- read_tsv(here::here("data", "intermediate_files", "GA10_mg_bottle.tsv")) %>% mutate(section="GA10")
+GP13.btl <- read_tsv(here::here("data", "intermediate_files", "GP13_mg_bottle.tsv")) %>% mutate(section="GP13")
+
+btl <- bind_rows(GA02.btl, 
+                 GA03.btl, 
+                 GA10.btl, 
+                 GP13.btl) %>%
+  dplyr::select(-station_num_BODC) %>%
+  mutate(nitrate_dissolved_umol.kg = ifelse(section=="GA10" & is.na(nitrate_dissolved_umol.kg), (nitrite.nitrate_dissolved_umol.kg-nitrite_dissolved_umol.kg), nitrate_dissolved_umol.kg))
+```
+
+## Generic GEOTRACES metadata
+```{r}
+gt <- read_tsv(here::here("data", "geotraces", "geotraces_formatted_metadata.tsv"))
+```
+```{r}
+gt.no.ts <- left_join(ctd, select(btl, -lat, -lon)) %>% 
+  left_join(., select(gt, -bottle_num_BODC, -station_num_BODC, -lat, -lon, -depth, -section))
+```
+
+## Tara Oceans
+```{r message=FALSE, warning=FALSE}
+tara <- read_tsv(here::here("data", "intermediate_files", "tara_biogeochem_metadata.tsv")) %>%
+  rename(ocean_category=ocean)
+```
+
+## Finish combining all data types
+```{r}
+combo <- bind_rows(tara, gt.no.ts) %>%
+  left_join(., ecotypes) %>%
+  left_join(., select(longhurst, -lat, -lon)) %>%
+  left_join(., darwin.global) %>%
+  bind_rows(., hot_bats_mean)
+```
+
+Clean up the ocean category
+```{r message=FALSE, warning=FALSE}
+combo1 <- combo %>%
+  mutate(ocean=case_when(ocean_category == "north atlantic" ~ "atlantic_north",
+                         ocean_category == "north pacific"  ~ "pacific_north",
+                         ocean_category == "south atlantic" ~ "atlantic_south",
+                         ocean_category == "south pacific"  ~ "pacific_south",
+                         ocean_category == "mediterranean" ~ "med_red",
+                         ocean_category == "red sea" ~ "med_red",
+                         ocean_category == "indian" ~ "indian",
+                         ocean_category == "southern ocean" ~ "southern_ocean")) %>%
+  select(-ocean_category) 
+```
+
+Set prochlorococcus ecotype values to zero in all depths deeper than 300 meters. In reality Pro total abundance is so low at those depths that relative ecotype abundances are meaningless
+```{r message=FALSE, warning=FALSE}
+combo2 <- combo1 %>%
+  filter(depth < 301) %>%
+  select(-pressure_dissolved_dbar) %>%
+  mutate_at(vars(pro_HLI:pro),
+             funs(ifelse(depth > 300, 0, .))) %>%
+  mutate(LongCode=factor(LongCode),
+         LongWind=factor(LongWind),
+         ocean=factor(ocean),
+         replicate=factor(replicate)) %>%
+  mutate(imputed_nitrate=ifelse(is.na(nitrate_dissolved_umol.kg), 1, 0),
+         imputed_nitrite=ifelse(is.na(nitrite_dissolved_umol.kg), 1, 0), 
+         imputed_oxygen=ifelse(is.na(oxygen_dissolved_umol.kg), 1, 0), 
+         imputed_phosphate=ifelse(is.na(phosphate_dissolved_umol.kg), 1, 0),
+         imputed_salinity=ifelse(is.na(salinity_dissolved_PSS.1978), 1, 0),
+         imputed_silicate=ifelse(is.na(silicate_dissolved_umol.kg), 1, 0),
+         imputed_temperature=ifelse(is.na(temperature_dissolved_deg.c), 1, 0)) %>%
+  # remove superflous tara metadata
+  select(-tara_station, -environment, -date, -hdb_cl, -ebi_run_id, 
+         -date_acquired_from_ebi, -full_sample_name, -env_feature, 
+         -station_num_BODC, -bottle_num_BODC, -pangaea_id, -geojoin.dist.km,
+         -release_version)
+```
+
+
+check for number of missing observations
+```{r}
+combo2 %>%
+  summarise_all(funs(sum(is.na(.))/n()))
+```
+
+For cases with sparsely missing data (~25% of observations) we will impute values using a Random Forest with the missRanger package. The missRanger package uses the ranger package to do fast missing value imputation by chained random forest prediction. As such, it serves as an alternative implementation of the 'MissForest' algorithm. In my experience this imputation strategy produces reasonable results in this dataset and allows using much more information in the regression analyses.
+
+
+```{r}
+to.impute <- "dcm.layer + dcm.max + chla_norm + nitrate_dissolved_umol.kg + nitrite_dissolved_umol.kg + oxygen_dissolved_umol.kg + phosphate_dissolved_umol.kg + salinity_dissolved_PSS.1978 + silicate_dissolved_umol.kg + temperature_dissolved_deg.c + pro_LLVIIa + pro_LLVIIb + pro_LLVIIc + pro_LLVIId + pro_LLVIIe + pro_LLVIIf + pel_Ia + pel_Ib + pel_Ic + pel_IIa + pel_IIb + pel_IIIa +  pel_IIIb + pel_IV + pel_V + sar11 + bacteria + archaea + eukaryotes + viruses"
+
+impute.by <- "lat + lon + depth + dcm.layer + dcm.max + chla_norm + ocean + LongCode + LongWind + FeT_darwin_clim + nitrate_dissolved_umol.kg + nitrite_dissolved_umol.kg + oxygen_dissolved_umol.kg + phosphate_dissolved_umol.kg + salinity_dissolved_PSS.1978 + silicate_dissolved_umol.kg + temperature_dissolved_deg.c + pro_HLI + pro_HLII + pro_HLIII_HLIV + pro_LLI + pro_LLII_LLIII + pro_LLIV + pro_LLVII + pro + pro_LLVIIa + pro_LLVIIb + pro_LLVIIc + pro_LLVIId + pro_LLVIIe + pro_LLVIIf + pel_Ia + pel_Ib + pel_Ic + pel_IIa + pel_IIb + pel_IIIa + pel_IIIb + pel_IV + pel_V + sar11 + bacteria + archaea + eukaryotes + viruses"
+
+imputeform <- as.formula(paste(to.impute, "~", impute.by, by=" "))
+
+with_preserve_seed(imp1 <- combo2 %>%
+  missRanger(imputeform,
+            verbose = 1, 
+            num.trees = 10000))
+```
+# TRACE METAL MEASUREMENTS ONLY
+
+First look at the number of NAs per section. Lots of metals are missing data
+```{r}
+missing.metals <- btl %>%
+  group_by(section) %>%
+  select(-sampleID, -lat, -lon, -nitrite.nitrate_dissolved_umol.kg,
+         -dissolved.organic.carbon_dissolved_umol.kg, -dissolved.inorganic.carbon_dissolved_umol.kg,
+         -salinity_dissolved_PSS.1978, -silicate_dissolved_umol.kg, -phosphate_dissolved_umol.kg, 
+         -oxygen_dissolved_umol.kg, -nitrite_dissolved_umol.kg, -nitrate_dissolved_umol.kg,
+         -temperature_dissolved_deg.c, -pressure_dissolved_dbar) %>%
+  summarise_all(funs(sum(is.na(.))/n())) %>%
+  pivot_longer(cols=-section, names_to="variable", values_to="percent_missing")
+
+missing.metals %>% arrange(variable)
+```
+
+Metal imputation only GEOTRACES
+
+copper_dissolved_nmol.kg    - GA03, GP13
+aluminum_dissolved_nmol.kg  - GA02, GA03
+nickel_dissolved_nmol.kg	  - GA02, GA03, GP13
+cobalt_dissolved_pmol.kg    - GA02, GA03, GA10
+iron_dissolved_nmol.kg      - GA02, GA03, GA10, GP13
+lead_dissolved_pmol.kg      - GA02, GA03, GA10, GP13	
+manganese_dissolved_nmol.kg	- GA02, GA03, GA10, GP13
+zinc_dissolved_nmol.kg      - GA02, GA03, GA10, GP13
+
+## Iron lead, manganese, zinc
+```{r}
+metals <- btl %>%
+  select(sampleID, cobalt_dissolved_pmol.kg, nickel_dissolved_nmol.kg, aluminum_dissolved_nmol.kg,
+         copper_dissolved_nmol.kg, iron_dissolved_nmol.kg, lead_dissolved_pmol.kg,
+         manganese_dissolved_nmol.kg, zinc_dissolved_nmol.kg, dissolved.inorganic.carbon_dissolved_umol.kg,
+         dissolved.organic.carbon_dissolved_umol.kg, molybdenum_dissolved_nmol.kg,
+         aluminum_total.particulate_nmol.kg, iron_soluble_nmol.kg, iron_total.particulate_nmol.kg,
+         ironII_dissolved_nmol.kg,  L1.copper.bind_dissolved_logK, L1.copper.conc_dissolved_nmol.kg,
+         L1.iron.bind_dissolved_logK, L1.iron.conc_dissolved_nmol.kg, L2.iron.bind_dissolved_nmol.kg,
+         L2.iron.logk_dissolved_logK, lead_total.dissolvable_pmol.kg, lead_total.particulate_pmol.kg) %>%
+  left_join(imp1, ., by="sampleID") #%>%
+  mutate(imputed_iron=ifelse(is.na(iron_dissolved_nmol.kg), 1, 0), 
+         imputed_lead=ifelse(is.na(lead_dissolved_pmol.kg), 1, 0), 
+         imputed_manganese=ifelse(is.na(manganese_dissolved_nmol.kg), 1, 0),
+         imputed_zinc=ifelse(is.na(zinc_dissolved_nmol.kg), 1, 0),
+         imputed_cobalt=ifelse(is.na(cobalt_dissolved_pmol.kg), 1, 0),
+         imputed_nickel=ifelse(is.na(nickel_dissolved_nmol.kg), 1, 0),
+         imputed_aluminum=ifelse(is.na(aluminum_dissolved_nmol.kg), 1, 0),
+         imputed_copper=ifelse(is.na(copper_dissolved_nmol.kg), 1, 0))
+```
+
+```{r message=FALSE, warning=FALSE}
+metals.to.impute <- "iron_dissolved_nmol.kg + lead_dissolved_pmol.kg + manganese_dissolved_nmol.kg + zinc_dissolved_nmol.kg + cobalt_dissolved_pmol.kg + nickel_dissolved_nmol.kg + aluminum_dissolved_nmol.kg + copper_dissolved_nmol.kg"
+
+metals.impute.by <- "cobalt_dissolved_pmol.kg + nickel_dissolved_nmol.kg + aluminum_dissolved_nmol.kg + copper_dissolved_nmol.kg + iron_dissolved_nmol.kg + lead_dissolved_pmol.kg + manganese_dissolved_nmol.kg + zinc_dissolved_nmol.kg + dissolved.inorganic.carbon_dissolved_umol.kg + dissolved.organic.carbon_dissolved_umol.kg + molybdenum_dissolved_nmol.kg + aluminum_total.particulate_nmol.kg + iron_soluble_nmol.kg + iron_total.particulate_nmol.kg + ironII_dissolved_nmol.kg +  L1.copper.bind_dissolved_logK + L1.copper.conc_dissolved_nmol.kg + L1.iron.bind_dissolved_logK + L1.iron.conc_dissolved_nmol.kg + L2.iron.bind_dissolved_nmol.kg + L2.iron.logk_dissolved_logK + lead_total.dissolvable_pmol.kg + lead_total.particulate_pmol.kg + lat + lon + depth + dcm.layer + dcm.max + chla_norm + hdb_cl + ocean + LongCode + LongWind + synDarwin_umolC.kg + proDarwin_umolC.kg + nitrateDarwin_dissolved_umol.kg + nitriteDarwin_dissolved_umol.kg + phosphateDarwin_dissolved_umol.kg + DOPDarwin_dissolved_umol.kg + ironDarwin_dissolved_nmol.kg + DOironDarwin_dissolved_nmol.kg + POironDarwin_dissolved_nmol.kg + nitrate_dissolved_umol.kg + nitrite_dissolved_umol.kg + oxygen_dissolved_umol.kg + phosphate_dissolved_umol.kg + salinity_dissolved_PSS.1978 + silicate_dissolved_umol.kg + temperature_dissolved_deg.c + pro_HLI + pro_HLII + pro_HLIII_HLIV + pro_LLI + pro_LLII_LLIII + pro_LLIV + pro_LLVII + pro + pro_LLVIIa + pro_LLVIIb + pro_LLVIIc + pro_LLVIId + pro_LLVIIe + pro_LLVIIf + pel_Ia + pel_Ib + pel_Ic + pel_IIa + pel_IIb + pel_IIIa + pel_IIIb + pel_IV + pel_V + sar11 + bacteria + archaea + eukaryotes + viruses"
+
+metals.imputeform <- as.formula(paste(metals.to.impute, "~", metals.impute.by, by=" "))
+
+with_preserve_seed(metals.imp <- metals %>%
+  missRanger(metals.imputeform,
+            verbose = 1, 
+            num.trees = 10000))
+```
+
+```{r}
+write_tsv(metals.imp, here::here("output", "geotraces_tara_combined_imputed.tsv"))
+```
+
