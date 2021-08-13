@@ -9,7 +9,7 @@ Data and code here is provided under the MIT License. Feel free to use or remix 
 ## NOTE ON REPRODUCIBILITY
 The [GEOTRACES](https://www.bodc.ac.uk/geotraces/data/idp2017/) data license is not GPL3 and you must request access and be approved before being allowed to download the data. Therefore, I can not include the GEOTRACES data here since it would be in violation of the license agreement. Unfortunately, this means that the workflows in the code directory are not truly reproducible since they do not include the GEOTRACES data. You can fill in the missing data for yourself by downloading the necessary metadata and placing it in the `01_env_data` directory. You will then simply need to replace the completed data files with the onces provided in this repository here which contain NA values for all GEOTRACES chemical measurements. However, all measurements for Prochlorococcus and SAR11 ecotype abundance are included.
 
-The MARMICRODB reference database version used in this analysis and the instructions for its use are available from [https://dx.doi.org/10.5281/zenodo.3520509]([https://dx.doi.org/10.5281/zenodo.3520509]).
+The MARMICRODB reference database version used in this analysis and the instructions for its use are available from https://dx.doi.org/10.5281/zenodo.3520509.
 
 ## ATTRIBUTION
 If you use any of the data mentioned or described in this repository it is ESSENTIAL!! that you properly cite the data sources. These include (but are not limited to):
