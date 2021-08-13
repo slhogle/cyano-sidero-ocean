@@ -1,5 +1,6 @@
-01_env_data/bin/cmap_api.txt
-01_env_data/output/geotraces_tara_combined_imputed.tsv
-05_hot_bats/from_randie/**
-06_global_metagenome_biogeography/data/geotraces_tara_combined_imputed.tsv
-07_global_metagenome_models/data/geotraces_tara_combined_imputed.tsv
+/01_env_data/bin/cmap_api.txt
+/01_env_data/data/intermediate_files/**
+/01_env_data/output/geotraces_tara_combined_imputed.tsv
+/05_hot_bats/from_randie/**
+/06_global_metagenome_biogeography/data/geotraces_tara_combined_imputed.tsv
+/07_global_metagenome_models/data/geotraces_tara_combined_imputed.tsv
