@@ -1,8 +1,10 @@
 # Supporting data and code for the paper:
 
-"Siderophores as an iron source for low-light adapted _Prochlorococcus_ from deep chlorophyll maximum layers of the oligotrophic ocean"
+"Siderophores as an iron source for picocyanobacteria in deep chlorophyll maximum layers of the oligotrophic ocean"
 
-[Preprint available from bioRxiv](https://www.biorxiv.org/content/)
+[Published version available Open Access at the ISME Journal](https://doi.org/10.1038/s41396-022-01215-w)
+
+[Preprint available at bioRxiv](https://doi.org/10.1101/2021.11.13.468467)
 
 Data and code here is provided under the MIT License. Feel free to use or remix as you see fit.
 
